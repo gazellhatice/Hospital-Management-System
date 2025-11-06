@@ -184,3 +184,14 @@ Service	             İş kuralları, DTO dönüşümleri
 Repository	         Veri erişimi (JPA)
 Security	           JWT + rol bazlı yetki
 View (Frontend)	     React component’leri, role-based menü sistemi  
+
+Bu yapı sayesinde:
+
+Client doğrudan modele veya veritabanına erişmez.
+
+View ve business logic birbirinden ayrılmıştır.
+
+Her rolün yetki seviyesi ayrıdır (Müdür, Doktor, Resepsiyon, Hasta).
+
+MVC mimarisi full-stack düzeyde uygulanmıştır.
+
