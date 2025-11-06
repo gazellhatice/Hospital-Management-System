@@ -1,73 +1,186 @@
-# React + TypeScript + Vite
+# 🏥 Hospital Sonn – Hastane Yönetim Sistemi
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Bu proje, **Spring Boot + PostgreSQL** tabanlı bir **backend** ile  
+**React + Tailwind CSS** tabanlı bir **frontend**’den oluşan tam kapsamlı bir hastane yönetim sistemidir.  
+Yapı, **MVC (Model–View–Controller)** mimarisine ve **katmanlı mimari** prensiplerine uygun olarak geliştirilmiştir.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🎯 Genel Bakış
 
-## React Compiler
+### 👥 Roller
+- **Müdür (Admin / Manager)**
+- **Doktor**
+- **Resepsiyonist**
+- **Hasta**
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 🎯 Amaç
+Bu sistemde hastanenin **randevu**, **reçete**, **ziyaretçi kaydı** ve **şikâyet süreçleri** tek bir merkezi panel üzerinden yönetilir.  
+Her kullanıcı rolü, yalnızca **kendi yetkili olduğu işlemleri** görüntüleyebilir veya gerçekleştirebilir.
 
-## Expanding the ESLint configuration
+### 🧩 Mimarinin Genel Yapısı
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| Katman | Teknoloji | Açıklama |
+|--------|------------|----------|
+| **Backend** | Spring Boot, JPA, PostgreSQL | MVC + Katmanlı yapı, JWT tabanlı güvenlik, REST API |
+| **Frontend** | React, Tailwind CSS | SPA yapısı, dinamik role-based menüler, Axios API bağlantısı |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Bu iki katman arasında iletişim **HTTP + JSON** üzerinden sağlanır.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+---
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 🏗️ MVC Mimarisinin Genel Yerleşimi
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+“Client doğrudan modele erişmemeli, yalnızca controller ile konuşmalı” ilkesine göre:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+React (Client)
+↓ HTTP (JSON)
+Controller (C)
+↓
+Service (iş kuralları)
+↓
+Repository (veri erişimi)
+↓
+Database (PostgreSQL)
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+
+### 🔹 Model (M)
+- **Entity sınıfları (@Entity)**  
+  `Kullanici`, `Doktor`, `Hasta`, `Randevu`, `Recete`, `Sikayet`, `ZiyaretciKayit`  
+  → Her biri veritabanındaki tablolarla birebir eşleştirilmiştir.
+
+- **DTO sınıfları**  
+  Verinin dış dünyaya güvenli aktarımını sağlar (Entity doğrudan açılmaz).
+
+### 🔹 Controller (C)
+Spring Boot’ta `@RestController` sınıfları:
+- `DoktorController`
+- `ResepsiyonController`
+- `MudurController`
+- `ReceteController`
+- `RandevuController`
+- `SikayetController`
+- `ZiyaretciKayitController`
+
+Controller’lar:
+- HTTP isteklerini karşılar,
+- `Service` katmanını çağırır,
+- JSON response döner.
+
+### 🔹 View (V)
+- Klasik JSP/Thymeleaf yerine **React componentleri** kullanılmıştır.
+- Backend sadece JSON döner; tüm görselleştirme frontend tarafında yapılır.
+- Böylece **View, tamamen frontend tarafına taşınmış** olur.
+
+---
+
+## ⚙️ Backend Mimarisi (Spring Boot)
+
+### 🔸 Katmanlar
+
+#### 1. Entity Katmanı
+`@Entity`, `@Id`, `@ManyToOne`, `@OneToMany` gibi JPA anotasyonlarıyla PostgreSQL tablolarına bağlanır.
+
+#### 2. Repository Katmanı
+`JpaRepository` uzantılı sınıflar:
+- `RandevuRepository`
+- `ReceteRepository`
+- `SikayetRepository`
+- `ZiyaretciKayitRepository`
+- `KullaniciRepository`
+
+Görevi yalnızca **veri erişimi (CRUD)** sağlamaktır.
+
+#### 3. Service Katmanı (Business Logic)
+- `RandevuServisi`, `ReceteServisi`, `SikayetServisi`, `DoktorCalismaSaatiServisi`, `AuthServisi`
+- İş kuralları, validasyonlar, DTO–Entity dönüşümleri bu katmanda yapılır.
+- Repository katmanına doğrudan erişim sadece Service üzerinden olur.
+
+#### 4. Controller Katmanı
+- JSON formatında veri alışverişi sağlar.
+- Servis metodlarını çağırır, sonuçları HTTP response olarak döner.
+
+#### 5. Güvenlik Katmanı (JWT)
+- `SecurityConfig` içinde:
+  - `csrf().disable()`
+  - `sessionCreationPolicy(STATELESS)`
+  - `JwtAuthFilter` uygulanır.
+
+
+## 💻 Frontend Mimarisi (React + Tailwind)
+
+### 🔸 Layout & Role Bazlı Menü
+`DashboardLayout` bileşeni:
+- Sidebar, Header, içerik alanı ortak.
+- Menü öğeleri kullanıcı rolüne göre dinamik oluşturulur.
+
+```jsx
+if (role === "RECEPTIONIST") {
+  links.push(
+    { label: "Randevu Oluştur", to: "/reception", icon: <Calendar /> },
+    { label: "Ziyaretçi Kaydı", to: "/reception/visitors", icon: <ClipboardList /> },
+  );
+}
+
+Frontend sadece:
+
+Form input state’lerini tutar,
+
+API çağrısı yapar,
+
+Gelen JSON verisini UI’da gösterir.
+Tüm iş kuralı backend’dedir.
+
+🔁 Örnek Akışlar
+🩺 Doktor Girişi
+
+Doktor, PersonelGiris ekranında email/şifre girer.
+
+POST /api/auth/login çağrısı yapılır.
+
+Backend JWT döner.
+
+React token’ı saklar, kullanıcıyı /doctor paneline yönlendirir.
+
+💊 Reçete Yazma
+
+Doktor DoktorReceteYazForm sayfasına girer.
+
+Formdan hasta ve ilaç bilgilerini doldurur.
+
+POST /api/recete/yaz çağrılır.
+
+Backend doğrulayıp veritabanına kaydeder.
+
+“Reçete başarıyla oluşturuldu” mesajı döner.
+
+📅 Resepsiyon Randevu Oluşturma
+
+/reception sayfası açılır → doktor ve hasta listesi API’den alınır.
+
+Form doldurulup “Randevu Oluştur” butonuna basılır.
+
+RandevuController istek alır → RandevuServisi çalışır.
+
+Müsaitlik kontrolü yapılır → veritabanına kaydedilir.
+
+Frontend’de başarı mesajı gösterilir.
+
+🧾 Müdür Raporları
+
+Müdür login olur → /admin/complaints sayfası.
+
+GET /api/admin/complaints isteği yapılır.
+
+Backend tüm şikayetleri SikayetServisi aracılığıyla döner.
+
+React tablo olarak gösterir. 
+
+🧩 Sonuç: Mimari Özeti
+Katman	             Açıklama
+Model (M)	           Entity + DTO
+Controller (C)	     REST endpoint’leri
+Service	             İş kuralları, DTO dönüşümleri
+Repository	         Veri erişimi (JPA)
+Security	           JWT + rol bazlı yetki
+View (Frontend)	     React component’leri, role-based menü sistemi  
