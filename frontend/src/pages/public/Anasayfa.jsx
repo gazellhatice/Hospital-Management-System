@@ -1,4 +1,6 @@
 import { Link } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import {
   Stethoscope,
   ShieldCheck,
@@ -18,28 +20,41 @@ import {
   CalendarDays,
   BadgeCheck,
 } from "lucide-react";
-import { useState } from "react";
 
-/* ---------- Küçük yardımcı bileşenler (JS/JSX) ---------- */
+/* ==========================================
+   Tiny helpers
+   ========================================== */
+function classNames(...xs) {
+  return xs.filter(Boolean).join(" ");
+}
+
+/* ---------- StatCard ---------- */
 function StatCard({ icon: Icon, value, label }) {
   return (
-    <div className="rounded-xl border border-cyan-100 bg-white/70 p-3 text-[12px] text-gray-700 shadow-sm hover:shadow-md transition">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-40px" }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      className="rounded-xl border border-cyan-100 bg-white p-3 text-[12px] text-gray-700 shadow-sm hover:shadow-md transition"
+      role="group"
+    >
       <div className="flex items-center gap-2 font-semibold text-gray-900">
         <Icon className="w-4 h-4" aria-hidden />
         <span>{value}</span>
       </div>
       <div className="mt-0.5 text-gray-500 leading-snug">{label}</div>
-    </div>
+    </motion.div>
   );
 }
 
-/* ---------- Yeni: Doktor Kartı ---------- */
+/* ---------- DoctorCard ---------- */
 function DoctorCard({ photoText, name, title, exp, rating, available, tags }) {
   return (
     <li className="group relative bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:shadow-lg hover:border-cyan-200 transition overflow-hidden">
       <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition bg-gradient-to-br from-cyan-50/50 to-emerald-50/40" />
       <div className="relative z-10 flex items-start gap-3">
-        {/* Avatar (metinli placeholder) */}
+        {/* Avatar */}
         <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-cyan-100 text-cyan-800 font-semibold grid place-items-center">
           {photoText}
         </div>
@@ -51,7 +66,7 @@ function DoctorCard({ photoText, name, title, exp, rating, available, tags }) {
           </div>
           <div className="text-[13px] text-gray-600">{title}</div>
 
-          {/* meta satırı */}
+          {/* meta */}
           <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-gray-600">
             <span className="inline-flex items-center gap-1">
               <Clock4 className="w-3.5 h-3.5 text-gray-500" />
@@ -59,38 +74,40 @@ function DoctorCard({ photoText, name, title, exp, rating, available, tags }) {
             </span>
             <span className="inline-flex items-center gap-1">
               <Star className="w-3.5 h-3.5 text-amber-500" />
-              {rating.toFixed(1)}
+              {Number(rating).toFixed(1)}
             </span>
             {available ? (
-              <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+              <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2 py-0.5 rounded-full">
                 <CalendarDays className="w-3.5 h-3.5" />
                 Uygun slot var
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+              <span className="inline-flex items-center gap-1 text-rose-700 bg-rose-50 border border-rose-200/70 px-2 py-0.5 rounded-full">
                 <CalendarDays className="w-3.5 h-3.5" />
                 Yakında uygun
               </span>
             )}
           </div>
 
-          {/* etiketler */}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {tags.map((t) => (
-              <span
-                key={t}
-                className="text-[11px] text-cyan-800 bg-cyan-50 border border-cyan-100 rounded-full px-2 py-0.5"
-              >
-                {t}
-              </span>
-            ))}
-          </div>
+          {/* tags */}
+          {Array.isArray(tags) && tags.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {tags.map((t) => (
+                <span
+                  key={t}
+                  className="text-[11px] text-cyan-800 bg-cyan-50 border border-cyan-100 rounded-full px-2 py-0.5"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* CTA */}
           <div className="mt-4">
             <Link
               to="/hasta-giris"
-              className="inline-flex items-center gap-2 text-sm font-medium text-white bg-cyan-700 hover:bg-cyan-800 rounded-lg px-3 py-2 shadow-sm active:scale-[0.98] transition"
+              className="inline-flex items-center gap-2 text-sm font-medium text-white bg-cyan-700 hover:bg-cyan-800 rounded-lg px-3 py-2 shadow-sm active:scale-[0.98] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60"
               aria-label={`${name} için randevu saatlerini gör`}
             >
               <CalendarDays className="w-4 h-4" />
@@ -103,6 +120,7 @@ function DoctorCard({ photoText, name, title, exp, rating, available, tags }) {
   );
 }
 
+/* ---------- FeatureCard ---------- */
 function FeatureCard({ icon: Icon, title, description }) {
   return (
     <li className="group bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition relative overflow-hidden">
@@ -127,23 +145,26 @@ function DuyuruSeridi() {
   if (hidden) return null;
 
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-4 py-3 shadow-sm flex items-start gap-3">
+    <aside
+      aria-label="Sistem duyurusu"
+      className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-4 py-3 shadow-sm flex items-start gap-3"
+    >
       <Megaphone className="w-4 h-4 mt-[2px]" aria-hidden />
       <div className="text-sm leading-relaxed">
         <div className="font-medium">Duyuru:</div>
         <div className="text-[13px]">
-          Sistem bakım çalışması <b>01 Kasım 2025, 02:00–04:00</b> arasında yapılacaktır.
-          Bu saatlerde randevu işlemlerinde kesintiler olabilir.
+          Sistem bakım çalışması <b>01 Kasım 2025, 02:00–04:00</b> arasında yapılacaktır. Bu saatlerde randevu
+          işlemlerinde kesintiler olabilir.
         </div>
       </div>
       <button
         onClick={() => setHidden(true)}
-        className="ml-auto text-amber-800/70 hover:text-amber-900 text-sm font-medium"
+        className="ml-auto text-amber-800/70 hover:text-amber-900 text-sm font-medium underline underline-offset-4"
         aria-label="Duyuruyu kapat"
       >
         Kapat
       </button>
-    </div>
+    </aside>
   );
 }
 
@@ -155,22 +176,23 @@ function FAQItem({ q, a, open, onToggle, idx }) {
         onClick={onToggle}
         aria-expanded={open}
         aria-controls={`faq-panel-${idx}`}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left"
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 rounded-xl"
       >
         <div className="flex items-center gap-2">
           <Info className="w-4 h-4 text-cyan-600" aria-hidden />
           <span className="font-medium text-gray-900">{q}</span>
         </div>
         <ChevronDown
-          className={`w-4 h-4 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}
+          className={classNames("w-4 h-4 text-gray-500 transition-transform", open ? "rotate-180" : "")}
           aria-hidden
         />
       </button>
       <div
         id={`faq-panel-${idx}`}
-        className={`grid transition-all duration-200 ease-out ${
+        className={classNames(
+          "grid transition-all duration-200 ease-out",
           open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-        }`}
+        )}
       >
         <div className="overflow-hidden">
           <div className="px-4 pb-4 text-[13px] text-gray-600 leading-relaxed">{a}</div>
@@ -196,7 +218,6 @@ function FAQSection() {
       q: "Geri bildirim/şikayet nasıl iletilir?",
       a: "Hasta panelinde 'Şikayetlerim' bölümünden yeni kayıt oluşturabilirsiniz. İlgili birimler en kısa sürede dönüş yapacaktır.",
     },
-    /* --- Yeni Maddeler --- */
     {
       q: "Randevu iptal koşulları nelerdir?",
       a: "Randevularınızı muayene saatinden en az 6 saat önce ücretsiz iptal edebilirsiniz. 6 saatten az kala iptaller yoğunluk yönetimi nedeniyle kısıtlanabilir. Geç bildirilen iptaller, tekrar randevu alımında öncelik durumunuzu etkileyebilir.",
@@ -218,7 +239,7 @@ function FAQSection() {
   return (
     <section
       id="sss"
-      className="bg-white/90 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-[0_16px_40px_-6px_rgba(0,0,0,0.08)] p-6"
+      className="bg-white border border-gray-200 rounded-2xl shadow-[0_16px_40px_-6px_rgba(0,0,0,0.08)] p-6"
     >
       <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
         <Building2 className="w-4 h-4 text-gray-700" aria-hidden />
@@ -244,98 +265,112 @@ function FAQSection() {
   );
 }
 
-/* ===================== ANA SAYFA ===================== */
+/* ==========================================
+   ANA SAYFA
+   ========================================== */
 export default function Anasayfa() {
-  const stats = [
-    { icon: Stethoscope, value: "24", label: "Aktif Hekim" },
-    { icon: Clock4, value: "480+", label: "Günlük Randevu Kapasitesi" },
-    { icon: ShieldCheck, value: "%97", label: "Hasta Memnuniyeti" },
-  ];
+  const stats = useMemo(
+    () => [
+      { icon: Stethoscope, value: "24", label: "Aktif Hekim" },
+      { icon: Clock4, value: "480+", label: "Günlük Randevu Kapasitesi" },
+      { icon: ShieldCheck, value: "%97", label: "Hasta Memnuniyeti" },
+    ],
+    []
+  );
 
-  const bolumler = [
-    { icon: Stethoscope, title: "Dahiliye", description: "İç hastalıkları tanı & takip" },
-    { icon: HeartPulse, title: "Kardiyoloji", description: "Kalp sağlığı ve ritim izleme" },
-    { icon: ShieldCheck, title: "Ortopedi", description: "Kas-iskelet sistemi tedavileri" },
-    { icon: Stethoscope, title: "Nöroloji", description: "Sinir sistemi muayenesi" },
-    { icon: ShieldCheck, title: "Radyoloji", description: "Görüntüleme ve raporlama" },
-    { icon: HeartPulse, title: "Çocuk Sağlığı", description: "Pediatrik muayene ve takip" },
-  ];
+  const bolumler = useMemo(
+    () => [
+      { icon: Stethoscope, title: "Dahiliye", description: "İç hastalıkları tanı & takip" },
+      { icon: HeartPulse, title: "Kardiyoloji", description: "Kalp sağlığı ve ritim izleme" },
+      { icon: ShieldCheck, title: "Ortopedi", description: "Kas-iskelet sistemi tedavileri" },
+      { icon: Stethoscope, title: "Nöroloji", description: "Sinir sistemi muayenesi" },
+      { icon: ShieldCheck, title: "Radyoloji", description: "Görüntüleme ve raporlama" },
+      { icon: HeartPulse, title: "Çocuk Sağlığı", description: "Pediatrik muayene ve takip" },
+    ],
+    []
+  );
 
-  /* --- Yeni: Doktor veri dizisi (mock) ---
-     Gerçek API bağlayınca burayı fetch ile doldurabilirsin. */
-  const doctors = [
-    {
-      photoText: "EK",
-      name: "Uzm. Dr. Elif Kaya",
-      title: "Kardiyoloji",
-      exp: 12,
-      rating: 4.8,
-      available: true,
-      tags: ["EKO", "Holter", "Hipertansiyon"],
-    },
-    {
-      photoText: "MA",
-      name: "Op. Dr. Murat Aksoy",
-      title: "Ortopedi ve Travmatoloji",
-      exp: 9,
-      rating: 4.7,
-      available: false,
-      tags: ["Artroskopi", "Spor Yaralanmaları", "Omuz"],
-    },
-    {
-      photoText: "SN",
-      name: "Doç. Dr. Selin Nur",
-      title: "Nöroloji",
-      exp: 11,
-      rating: 4.9,
-      available: true,
-      tags: ["Migren", "Epilepsi", "EMG"],
-    },
-    {
-      photoText: "AH",
-      name: "Uzm. Dr. Ahmet Hakan",
-      title: "Dahiliye",
-      exp: 7,
-      rating: 4.6,
-      available: true,
-      tags: ["Diyabet", "Tiroid", "Check-up"],
-    },
-  ];
+  const doctors = useMemo(
+    () => [
+      {
+        photoText: "EK",
+        name: "Uzm. Dr. Elif Kaya",
+        title: "Kardiyoloji",
+        exp: 12,
+        rating: 4.8,
+        available: true,
+        tags: ["EKO", "Holter", "Hipertansiyon"],
+      },
+      {
+        photoText: "MA",
+        name: "Op. Dr. Murat Aksoy",
+        title: "Ortopedi ve Travmatoloji",
+        exp: 9,
+        rating: 4.7,
+        available: false,
+        tags: ["Artroskopi", "Spor Yaralanmaları", "Omuz"],
+      },
+      {
+        photoText: "SN",
+        name: "Doç. Dr. Selin Nur",
+        title: "Nöroloji",
+        exp: 11,
+        rating: 4.9,
+        available: true,
+        tags: ["Migren", "Epilepsi", "EMG"],
+      },
+      {
+        photoText: "AH",
+        name: "Uzm. Dr. Ahmet Hakan",
+        title: "Dahiliye",
+        exp: 7,
+        rating: 4.6,
+        available: true,
+        tags: ["Diyabet", "Tiroid", "Check-up"],
+      },
+    ],
+    []
+  );
 
   return (
     <div className="space-y-12 relative">
-      {/* Arka plan bezeleri */}
+      {/* BG Decorations */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-cyan-100 blur-3xl opacity-70" />
         <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-emerald-100 blur-3xl opacity-70" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(6,182,212,0.05),_transparent_60%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(6,182,212,0.08),_transparent_60%)]" />
       </div>
 
       {/* Duyuru */}
       <DuyuruSeridi />
 
-      {/* === HERO / INTRO === */}
-      <section className="bg-white/90 backdrop-blur-sm border border-cyan-200 rounded-2xl shadow-[0_24px_64px_-8px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col lg:flex-row lg:items-stretch">
-        {/* Sol taraf: metin + CTA */}
+      {/* HERO */}
+      <section
+        className="bg-white border border-cyan-200 rounded-2xl shadow-[0_24px_64px_-8px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col lg:flex-row lg:items-stretch"
+        aria-labelledby="hero-title"
+      >
+        {/* Left: text + cta */}
         <div className="flex-1 p-6 sm:p-8 bg-gradient-to-br from-cyan-50 via-white to-white">
           <div className="inline-flex items-center gap-2 text-[12px] font-semibold text-cyan-700 bg-cyan-100/70 border border-cyan-200 rounded-full px-3 py-1 shadow-sm mb-4 w-fit">
-            <Hospital className="w-3.5 h-3.5 text-cyan-700" aria-hidden />
+            <Hospital className="w-3.5 h-3.5" aria-hidden />
             <span>Hastane Sonn</span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-semibold text-gray-900 leading-tight tracking-tight">
+          <h1
+            id="hero-title"
+            className="text-3xl sm:text-4xl font-semibold text-gray-900 leading-tight tracking-tight"
+          >
             Modern sağlık hizmeti.
             <br className="hidden sm:block" />
             Güvenilir kayıt sistemi.
           </h1>
 
           <p className="text-gray-600 mt-3 text-base leading-relaxed max-w-xl">
-            Randevularınızı yönetin, reçetelerinizi görüntüleyin, gerektiğinde
-            yönetime anında geri bildirim verin. Doktorlarımız ve resepsiyon
-            ekibimiz tek bir sistem üzerinde çalışır.
+            Randevularınızı yönetin, reçetelerinizi görüntüleyin, gerektiğinde yönetime anında geri bildirim verin.
+            Doktorlarımız ve resepsiyon ekibimiz tek bir sistem üzerinde çalışır.
           </p>
 
-          {/* CTA Butonlar */}
+          {/* CTA Buttons */}
           <div className="flex flex-wrap gap-3 mt-6 text-sm">
             <Link
               to="/hasta-giris"
@@ -364,7 +399,7 @@ export default function Anasayfa() {
             </Link>
           </div>
 
-          {/* Güven / kısa istatistikler */}
+          {/* Quick stats */}
           <div className="mt-7 grid grid-cols-3 gap-3 max-w-xl">
             {stats.map((s) => (
               <StatCard key={s.label} icon={s.icon} value={s.value} label={s.label} />
@@ -372,7 +407,7 @@ export default function Anasayfa() {
           </div>
         </div>
 
-        {/* Sağ taraf: çalışma saatleri / acil servis */}
+        {/* Right: working hours / emergency */}
         <div className="flex-1 min-w-[280px] border-t lg:border-l lg:border-t-0 border-cyan-100 bg-white p-6 sm:p-8 flex flex-col justify-between">
           <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 shadow-inner text-sm text-gray-700 p-4">
             <div className="font-semibold text-gray-900 text-[14px] flex items-center gap-2 mb-2">
@@ -394,22 +429,21 @@ export default function Anasayfa() {
                 <HeartPulse className="w-4 h-4 text-rose-600" aria-hidden />
                 <span>Acil Servis</span>
               </span>
-              <span className="text-[12px] leading-snug text-rose-700/90">
-                7 / 24 hizmet veriyoruz
-              </span>
+              <span className="text-[12px] leading-snug text-rose-700/90">7 / 24 hizmet veriyoruz</span>
             </div>
           </div>
 
           <p className="hidden lg:block text-[11px] text-gray-400 leading-snug mt-6">
-            Bu sistemdeki tüm işlemler denetim amaçlı kaydedilir. İzinsiz erişim güvenlik politikalarımız gereği raporlanır.
+            Bu sistemdeki tüm işlemler denetim amaçlı kaydedilir. İzinsiz erişim güvenlik politikalarımız gereği
+            raporlanır.
           </p>
         </div>
       </section>
 
-      {/* === BÖLÜMLERİMİZ === */}
+      {/* BÖLÜMLER */}
       <section
         id="bolumlerimiz"
-        className="bg-white/90 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-[0_16px_40px_-6px_rgba(0,0,0,0.08)] p-6"
+        className="bg-white border border-gray-200 rounded-2xl shadow-[0_16px_40px_-6px_rgba(0,0,0,0.08)] p-6"
       >
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -437,10 +471,10 @@ export default function Anasayfa() {
         </ul>
       </section>
 
-      {/* === DOKTORLARIMIZ – Profesyonel kartlar === */}
+      {/* DOKTORLAR */}
       <section
         id="doktorlarimiz"
-        className="bg-white/90 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-[0_16px_40px_-6px_rgba(0,0,0,0.08)] p-6"
+        className="bg-white border border-gray-200 rounded-2xl shadow-[0_16px_40px_-6px_rgba(0,0,0,0.08)] p-6"
       >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
@@ -470,13 +504,13 @@ export default function Anasayfa() {
         </div>
       </section>
 
-      {/* --- SSS / FAQ --- */}
+      {/* FAQ */}
       <FAQSection />
 
-      {/* === İLETİŞİM === */}
+      {/* İLETİŞİM */}
       <section
         id="iletisim"
-        className="bg-white/90 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-[0_16px_40px_-6px_rgba(0,0,0,0.08)] p-6"
+        className="bg-white border border-gray-200 rounded-2xl shadow-[0_16px_40px_-6px_rgba(0,0,0,0.08)] p-6"
       >
         <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <Building2 className="w-4 h-4 text-gray-700" aria-hidden />
@@ -510,7 +544,8 @@ export default function Anasayfa() {
         </div>
 
         <p className="text-[11px] text-gray-400 leading-snug mt-6">
-          Bu bir demo yazılımıdır. Gerçek randevu, reçete ya da tıbbi yönlendirme niteliği taşımaz ve sağlık profesyoneli tavsiyesi yerine geçmez.
+          Bu bir demo yazılımıdır. Gerçek randevu, reçete ya da tıbbi yönlendirme niteliği taşımaz ve sağlık
+          profesyoneli tavsiyesi yerine geçmez.
         </p>
       </section>
     </div>

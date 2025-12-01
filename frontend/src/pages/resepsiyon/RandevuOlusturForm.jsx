@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiPost } from "../../api";
 import {
   Search,
@@ -38,15 +38,22 @@ export default function RandevuOlusturForm() {
   const tcValid = useMemo(() => /^[0-9]{11}$/.test(tcArama), [tcArama]);
   const slotCount = slotlar?.length || 0;
 
-  function fTarih(s) {
+  // YYYY-MM-DD güvenli formatlayıcı (timezone kaymasını önler)
+  function fTarihSafe(s) {
     if (!s) return "—";
+    // "2025-11-12" gibi ise parçalayalım
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m) {
+      const [, y, mo, d] = m;
+      return `${d}.${mo}.${y}`;
+    }
+    // değilse şansımızı Date ile deneyelim
     try {
-      // Eğer backend YYYY-MM-DD döndürüyorsa bu parse edilir.
       const d = new Date(s);
-      if (!Number.isFinite(d.getTime())) return s;
+      if (!Number.isFinite(d.getTime())) return String(s);
       return d.toLocaleDateString("tr-TR");
     } catch {
-      return s;
+      return String(s);
     }
   }
 
@@ -69,11 +76,11 @@ export default function RandevuOlusturForm() {
   }
 
   // --- slotları çek ---
-  async function yukleSlotlar() {
+  async function yukleSlotlar(returnList = false) {
     setMesaj("");
     setMesajTip("");
-    if (slotLoading) return;
-    setSlotLoading(true);
+    if (!returnList && slotLoading) return;
+    if (!returnList) setSlotLoading(true);
     try {
       const data = await apiGet("/api/slot/resepsiyon/musait");
       const list = normalizeSlots(data);
@@ -88,16 +95,19 @@ export default function RandevuOlusturForm() {
         setMesaj("Şu anda uygun saat bulunamadı.");
         setMesajTip("info");
       }
+      return list;
     } catch (err) {
       setMesaj("Slotlar yüklenemedi. Lütfen daha sonra tekrar deneyin.");
       setMesajTip("err");
+      return [];
     } finally {
-      setSlotLoading(false);
+      if (!returnList) setSlotLoading(false);
     }
   }
 
   useEffect(() => {
     yukleSlotlar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // ilk mount
 
   // --- hasta ara ---
@@ -164,7 +174,7 @@ export default function RandevuOlusturForm() {
 
       const r = await apiPost("/api/randevu/olustur", payload);
 
-      // Bazı backend'ler boş body dönebiliyor; olası anahtarları kontrol et
+      // Olası anahtarlar
       const randevuId =
         r?.randevuId ?? r?.data?.randevuId ?? r?.id ?? r?.data?.id ?? undefined;
 
@@ -180,13 +190,21 @@ export default function RandevuOlusturForm() {
       // UI: slotu listeden düş
       setSlotlar((prev) => prev.filter((s) => String(s.slotId) !== String(secilenSlot)));
     } catch (err) {
-      // ❗ Fallback: Gerçekten oluşmuş mu kontrol et (beklenmeyen response/parse hatası olabilir)
-      await yukleSlotlar();
-      const chosenStillThere = slotlar.some(
+      // Hata mesajını daha akıllı yakala
+      const serverMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        (typeof err?.response?.data === "string" ? err.response.data : null) ||
+        err?.message ||
+        null;
+
+      // ❗ Fallback: Gerçekten oluşmuş mu kontrol et (fresh list ile)
+      const fresh = await yukleSlotlar(true);
+      const stillThere = fresh.some(
         (s) => String(s.slotId) === String(lastSelectedSlotRef.current?.slotId)
       );
 
-      if (!chosenStillThere) {
+      if (!stillThere && lastSelectedSlotRef.current) {
         // Slot listeden düşmüş → büyük olasılıkla randevu oluştu
         setMesaj(
           "Sunucu beklenmeyen bir yanıt verdi ama seçtiğiniz saat artık uygun görünmüyor. Randevunun oluştuğu doğrulandı."
@@ -194,8 +212,9 @@ export default function RandevuOlusturForm() {
         setMesajTip("ok");
         setSecilenSlot("");
         setNotlar("");
+        setSlotlar(fresh); // ekranda güncel liste görünsün
       } else {
-        setMesaj("Randevu oluşturulamadı. Lütfen bilgileri kontrol edin.");
+        setMesaj(serverMsg || "Randevu oluşturulamadı. Lütfen bilgileri kontrol edin.");
         setMesajTip("err");
       }
     } finally {
@@ -228,7 +247,7 @@ export default function RandevuOlusturForm() {
             </span>
             <button
               type="button"
-              onClick={yukleSlotlar}
+              onClick={() => yukleSlotlar()}
               className="ml-2 inline-flex items-center gap-1 rounded-md border border-cyan-200 bg-cyan-50 px-2 py-1 hover:bg-cyan-100 transition text-cyan-700 disabled:opacity-60"
               disabled={slotLoading}
               title="Slotları yenile"
@@ -374,7 +393,7 @@ export default function RandevuOlusturForm() {
                 ) : (
                   slotlar.map((slot) => (
                     <option key={slot.slotId} value={slot.slotId}>
-                      {slot.doktor?.adSoyad || "Doktor ?"} · {fTarih(slot.tarih)} · {slot.baslangicSaat}-{slot.bitisSaat}
+                      {slot.doktor?.adSoyad || "Doktor ?"} · {fTarihSafe(slot.tarih)} · {slot.baslangicSaat}-{slot.bitisSaat}
                     </option>
                   ))
                 )}
@@ -383,7 +402,7 @@ export default function RandevuOlusturForm() {
               {/* sağda yeniden yükle */}
               <button
                 type="button"
-                onClick={yukleSlotlar}
+                onClick={() => yukleSlotlar()}
                 className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-md border border-cyan-200 bg-cyan-50 px-2 py-1 text-cyan-700 hover:bg-cyan-100 transition disabled:opacity-60"
                 title="Slotları yenile"
                 disabled={slotLoading}
@@ -427,11 +446,11 @@ export default function RandevuOlusturForm() {
         <div className="mt-1 text-[12px] text-gray-600 flex items-start gap-2 bg-cyan-50/60 border border-cyan-200 rounded-lg px-3 py-2">
           <Info className="w-4 h-4 text-cyan-600 mt-[2px]" />
           <span>
-            Randevu kaydı yapıldığında seçtiğiniz saat otomatik olarak listeden düşer. Uygun saat görünmüyorsa{" "}
-            <b>Yenile</b> butonunu kullanın.
+            Randevu kaydı yapıldığında seçtiğiniz saat otomatik olarak listeden düşer. Uygun saat görünmüyorsa <b>Yenile</b> butonunu kullanın.
           </span>
         </div>
       </section>
     </section>
   );
 }
+

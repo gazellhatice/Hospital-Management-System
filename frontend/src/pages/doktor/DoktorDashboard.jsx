@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
   CalendarDays,
@@ -7,17 +7,57 @@ import {
   LogOut,
   Stethoscope,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 import DoktorBugunkuRandevularCard from "./DoktorBugunkuRandevularCard.jsx";
 import DoktorSlotAcForm from "./DoktorSlotAcForm.jsx";
 import DoktorReceteYazForm from "./DoktorReceteYazForm.jsx";
 
 export default function DoktorDashboard() {
-  const [tab, setTab] = useState("home"); // "home" | "randevu" | "slot" | "recete"
-  const aktifDoktor = JSON.parse(localStorage.getItem("aktifDoktor") || "null");
+  const [tab, setTab] = useState(() => localStorage.getItem("drTab") || "home"); // "home" | "randevu" | "slot" | "recete"
+  const aktifDoktor = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("aktifDoktor") || "null"); }
+    catch { return null; }
+  }, []);
 
-  function cikisYap() {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    // auth guard
+    if (!aktifDoktor) {
+      window.location.href = "/personel-giris";
+    }
+  }, [aktifDoktor]);
+
+  useEffect(() => {
+    localStorage.setItem("drTab", tab);
+    // scroll to top of content when tab changes
+    containerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [tab]);
+
+  // keyboard shortcuts
+  useEffect(() => {
+    function onKey(e) {
+      if (!e.target || ["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+      if (e.key === "1") setTab("home");
+      if (e.key === "2") setTab("randevu");
+      if (e.key === "3") setTab("slot");
+      if (e.key === "4") setTab("recete");
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key.toLowerCase() === "l")) {
+        cikisYap(true);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function cikisYap(confirmBefore = false) {
+    if (confirmBefore) {
+      const ok = window.confirm("Çıkış yapmak istediğinize emin misiniz?");
+      if (!ok) return;
+    }
     localStorage.removeItem("aktifDoktor");
+    localStorage.removeItem("drTab");
     window.location.href = "/personel-giris";
   }
 
@@ -25,6 +65,8 @@ export default function DoktorDashboard() {
     "group flex items-center gap-2 rounded-lg px-3 py-2 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-sm transition cursor-pointer";
   const active =
     "text-indigo-700 bg-indigo-50 border border-indigo-200 shadow-sm [&_svg]:text-indigo-600";
+
+  const greeting = getGreeting();
 
   return (
     <div className="min-h-screen flex bg-slate-100">
@@ -37,7 +79,7 @@ export default function DoktorDashboard() {
             <span>Doktor Paneli</span>
           </div>
           <div className="mt-3 text-base font-semibold text-slate-900 leading-tight">
-            Hoş geldiniz 👋
+            {greeting} 👋
           </div>
           <div className="text-[12px] text-slate-500 leading-snug">
             Randevular, slot ve reçete işlemleri.
@@ -49,6 +91,7 @@ export default function DoktorDashboard() {
           <button
             onClick={() => setTab("home")}
             className={`${itemBase} ${tab === "home" ? active : ""}`}
+            title="1"
           >
             <LayoutDashboard className="w-4 h-4" />
             <span className="font-medium">Genel Görünüm</span>
@@ -57,6 +100,7 @@ export default function DoktorDashboard() {
           <button
             onClick={() => setTab("randevu")}
             className={`${itemBase} ${tab === "randevu" ? active : ""}`}
+            title="2"
           >
             <CalendarDays className="w-4 h-4" />
             <span className="font-medium">Bugünkü Randevular</span>
@@ -65,6 +109,7 @@ export default function DoktorDashboard() {
           <button
             onClick={() => setTab("slot")}
             className={`${itemBase} ${tab === "slot" ? active : ""}`}
+            title="3"
           >
             <Clock4 className="w-4 h-4" />
             <span className="font-medium">Slot (Muayene Saati) Aç</span>
@@ -73,6 +118,7 @@ export default function DoktorDashboard() {
           <button
             onClick={() => setTab("recete")}
             className={`${itemBase} ${tab === "recete" ? active : ""}`}
+            title="4"
           >
             <FileSignature className="w-4 h-4" />
             <span className="font-medium">Reçete Yaz</span>
@@ -98,8 +144,9 @@ export default function DoktorDashboard() {
               </div>
 
               <button
-                onClick={cikisYap}
+                onClick={() => cikisYap(true)}
                 className="inline-flex items-center gap-2 text-[12px] font-medium text-rose-600 hover:text-rose-700 hover:underline underline-offset-4 transition"
+                title="Ctrl/⌘+Shift+L"
               >
                 <LogOut className="w-4 h-4" />
                 <span>Çıkış Yap</span>
@@ -114,51 +161,89 @@ export default function DoktorDashboard() {
       </aside>
 
       {/* === ANA İÇERİK === */}
-      <main className="flex-1 relative overflow-y-auto">
+      <main ref={containerRef} className="flex-1 relative overflow-y-auto">
         <div className="absolute inset-0 bg-gradient-to-br from-white via-slate-50 to-slate-100" />
         <div className="relative p-6 sm:p-8 space-y-6">
-          {tab === "home" && (
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2">
+          <AnimatePresence mode="wait">
+            {tab === "home" && (
+              <motion.div
+                key="home"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+                className="grid gap-6 lg:grid-cols-3"
+              >
+                <div className="lg:col-span-2">
+                  <DoktorBugunkuRandevularCard />
+                </div>
+                <div className="lg:col-span-3">
+                  <DoktorSlotAcForm />
+                </div>
+                <div className="lg:col-span-3">
+                  <DoktorReceteYazForm />
+                </div>
+              </motion.div>
+            )}
+
+            {tab === "randevu" && (
+              <motion.div
+                key="randevu"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                <h1 className="text-xl font-semibold text-slate-900">
+                  Bugünkü Randevular
+                </h1>
                 <DoktorBugunkuRandevularCard />
-              </div>
-              <div className="lg:col-span-3">
+              </motion.div>
+            )}
+
+            {tab === "slot" && (
+              <motion.div
+                key="slot"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                <h1 className="text-xl font-semibold text-slate-900">
+                  Muayene Saati (Slot) Aç
+                </h1>
                 <DoktorSlotAcForm />
-              </div>
-              <div className="lg:col-span-3">
+              </motion.div>
+            )}
+
+            {tab === "recete" && (
+              <motion.div
+                key="recete"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
+                <h1 className="text-xl font-semibold text-slate-900">
+                  Reçete Yaz
+                </h1>
                 <DoktorReceteYazForm />
-              </div>
-            </div>
-          )}
-
-          {tab === "randevu" && (
-            <div className="space-y-6">
-              <h1 className="text-xl font-semibold text-slate-900">
-                Bugünkü Randevular
-              </h1>
-              <DoktorBugunkuRandevularCard />
-            </div>
-          )}
-
-          {tab === "slot" && (
-            <div className="space-y-6">
-              <h1 className="text-xl font-semibold text-slate-900">
-                Muayene Saati (Slot) Aç
-              </h1>
-              <DoktorSlotAcForm />
-            </div>
-          )}
-
-          {tab === "recete" && (
-            <div className="space-y-6">
-              <h1 className="text-xl font-semibold text-slate-900">
-                Reçete Yaz
-              </h1>
-              <DoktorReceteYazForm />
-            </div>
-          )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </main>
     </div>
   );
+}
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 11) return "Günaydın";
+  if (h < 17) return "İyi günler";
+  if (h < 22) return "İyi akşamlar";
+  return "Merhaba";
 }

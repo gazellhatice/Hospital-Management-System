@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import { apiPost } from "../../api";
 import {
   UserRound,
@@ -19,23 +20,35 @@ import {
 
 export default function HastaKayit() {
   const [adSoyad, setAdSoyad] = useState("");
-  const [tc, setTc] = useState("");
+  const [tc, setTc] = useState(""); // raw
   const [email, setEmail] = useState("");
   const [sifre, setSifre] = useState("");
-  const [telefon, setTelefon] = useState("");
+  const [telefon, setTelefon] = useState(""); // raw
   const [adres, setAdres] = useState("");
 
   const [mesaj, setMesaj] = useState("");
-  const [mesajTip, setMesajTip] = useState("");
+  const [mesajTip, setMesajTip] = useState(""); // "ok" | "err" | ""
   const [loading, setLoading] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
 
   const navigate = useNavigate();
 
-  // === Validation helpers ===
-  const tcDigits = useMemo(() => tc.replace(/\D/g, ""), [tc]);
-  const telDigits = useMemo(() => telefon.replace(/\D/g, ""), [telefon]);
+  // === Derived values ===
+  const tcDigits = useMemo(() => tc.replace(/\D/g, "").slice(0, 11), [tc]);
+  const telDigits = useMemo(() => telefon.replace(/\D/g, "").slice(0, 11), [telefon]);
 
+  const formattedPhone = useMemo(() => {
+    // 05xx xxx xx xx
+    const d = telDigits;
+    if (!d) return "";
+    const p1 = d.slice(0, 4);
+    const p2 = d.slice(4, 7);
+    const p3 = d.slice(7, 9);
+    const p4 = d.slice(9, 11);
+    return [p1, p2 && " " + p2, p3 && " " + p3, p4 && " " + p4].filter(Boolean).join("");
+  }, [telDigits]);
+
+  // === Validation helpers ===
   const isNameValid = adSoyad.trim().length >= 3;
   const isTcValid = /^[0-9]{11}$/.test(tcDigits);
   const isTelValid = /^05[0-9]{9}$/.test(telDigits);
@@ -45,6 +58,7 @@ export default function HastaKayit() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (loading) return; // double submit koruması
     setMesaj("");
     setMesajTip("");
 
@@ -69,6 +83,7 @@ export default function HastaKayit() {
       setMesaj("Hesabınız oluşturuldu. Yönlendiriliyorsunuz...");
       setMesajTip("ok");
 
+      // formu sıfırla
       setAdSoyad("");
       setTc("");
       setTelefon("");
@@ -76,10 +91,12 @@ export default function HastaKayit() {
       setSifre("");
       setAdres("");
 
-      setTimeout(() => navigate("/panel/hasta"), 1500);
+      setTimeout(() => navigate("/panel/hasta"), 1200);
     } catch (err) {
       console.error("Hasta kayıt hatası:", err);
-      setMesaj("Kayıt başarısız. TC zaten kayıtlı olabilir veya bilgiler eksik.");
+      const msg =
+        err?.response?.data?.message || "Kayıt başarısız. TC zaten kayıtlı olabilir veya bilgiler eksik.";
+      setMesaj(msg);
       setMesajTip("err");
     } finally {
       setLoading(false);
@@ -88,23 +105,21 @@ export default function HastaKayit() {
 
   return (
     <div className="w-full flex justify-center px-4 py-10">
-      <section className="w-full max-w-md bg-white/80 backdrop-blur-sm border border-emerald-200 rounded-2xl shadow-[0_24px_64px_-8px_rgba(0,0,0,0.12)] p-6 sm:p-8 flex flex-col gap-6">
+      <section className="w-full max-w-md bg-white/90 backdrop-blur-sm border border-emerald-200 rounded-2xl shadow-[0_24px_64px_-8px_rgba(0,0,0,0.12)] p-6 sm:p-8 flex flex-col gap-6">
         {/* HEADER */}
         <header className="flex flex-col gap-2">
           <div className="inline-flex items-center gap-2 text-[11px] font-semibold text-emerald-700 bg-emerald-100/70 border border-emerald-200 rounded-full px-2.5 py-1 shadow-sm w-fit">
-            <UserRound className="w-3.5 h-3.5 text-emerald-700" />
+            <UserRound className="w-3.5 h-3.5" />
             <span>Yeni Hasta Kaydı</span>
           </div>
 
-          <div className="text-xl font-semibold text-gray-900 leading-tight">
-            Hesabınızı Oluşturun
-          </div>
+          <div className="text-xl font-semibold text-gray-900 leading-tight">Hesabınızı Oluşturun</div>
 
           <p className="text-[13px] text-gray-500 leading-relaxed flex items-start gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-[1px]" />
             <span>
-              Kendi hesabınızı önceden açarak resepsiyonda bekleme süresini
-              azaltabilirsiniz. Verileriniz gizli tutulur.
+              Kendi hesabınızı önceden açarak resepsiyonda bekleme süresini azaltabilirsiniz. Verileriniz gizli
+              tutulur.
             </span>
           </p>
         </header>
@@ -119,46 +134,59 @@ export default function HastaKayit() {
 
         {/* MESAJ BLOKLARI */}
         {mesaj && (
-          <div>
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`${
+              mesajTip === "ok"
+                ? "border-emerald-200 bg-emerald-50/80 text-emerald-700"
+                : "border-rose-200 bg-rose-50/80 text-rose-700"
+            } flex items-start gap-3 rounded-lg px-4 py-3 text-[13px] shadow-sm`}
+            role={mesajTip === "ok" ? "status" : "alert"}
+            aria-live={mesajTip === "ok" ? "polite" : "assertive"}
+          >
             {mesajTip === "ok" ? (
-              <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-[13px] text-emerald-700 shadow-sm animate-fade-in">
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-[2px]" />
-                <div className="leading-snug">
-                  <div className="font-semibold text-emerald-700">
-                    Kayıt oluşturuldu
-                  </div>
-                  <div className="text-emerald-700/90">{mesaj}</div>
-                </div>
-              </div>
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-[2px]" />
             ) : (
-              <div className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50/70 px-4 py-3 text-[13px] text-rose-700 shadow-sm animate-fade-in">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-[2px]" />
-                <div className="leading-snug">
-                  <div className="font-semibold text-rose-700">
-                    Kayıt başarısız
-                  </div>
-                  <div className="text-rose-700/90">{mesaj}</div>
-                  <div className="text-[11px] text-rose-500/80 mt-1 leading-snug">
-                    TC numarası zaten kayıtlı olabilir veya zorunlu alan boş.
-                  </div>
-                </div>
-              </div>
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-[2px]" />
             )}
-          </div>
+            <div className="leading-snug">
+              <div className="font-semibold">
+                {mesajTip === "ok" ? "Kayıt oluşturuldu" : "Kayıt başarısız"}
+              </div>
+              <div className="opacity-90">{mesaj}</div>
+              {mesajTip !== "ok" && (
+                <div className="text-[11px] opacity-75 mt-1 leading-snug">
+                  TC numarası zaten kayıtlı olabilir veya zorunlu alan boş.
+                </div>
+              )}
+            </div>
+          </motion.div>
         )}
 
         {/* FORM */}
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit} noValidate>
           {/* Ad Soyad */}
           <div className="text-sm">
-            <label className="block text-[13px] font-medium text-gray-700 mb-1">Ad Soyad</label>
+            <label
+              className="block text-[13px] font-medium text-gray-700 mb-1"
+              htmlFor="fullName"
+            >
+              Ad Soyad
+            </label>
             <div className="relative">
               <input
+                id="fullName"
                 className={`w-full rounded-lg border bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 transition
-                ${isNameValid ? "border-gray-300 focus:ring-emerald-500" : "border-amber-300 focus:ring-amber-500"}`}
+                ${
+                  isNameValid
+                    ? "border-gray-300 focus:ring-emerald-500 focus:border-emerald-500"
+                    : "border-amber-300 focus:ring-amber-500 focus:border-amber-500"
+                }`}
                 value={adSoyad}
                 onChange={(e) => setAdSoyad(e.target.value)}
                 placeholder="Örn: Elif Karan"
+                autoComplete="name"
               />
               <UserRound className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
@@ -166,18 +194,27 @@ export default function HastaKayit() {
 
           {/* TC Kimlik */}
           <div className="text-sm">
-            <label className="block text-[13px] font-medium text-gray-700 mb-1">
+            <label
+              className="block text-[13px] font-medium text-gray-700 mb-1"
+              htmlFor="tc"
+            >
               TC Kimlik No
             </label>
             <div className="relative">
               <input
+                id="tc"
                 inputMode="numeric"
                 maxLength={11}
                 className={`w-full rounded-lg border bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 transition
-                ${isTcValid ? "border-gray-300 focus:ring-emerald-500" : "border-amber-300 focus:ring-amber-500"}`}
+                ${
+                  isTcValid
+                    ? "border-gray-300 focus:ring-emerald-500 focus:border-emerald-500"
+                    : "border-amber-300 focus:ring-amber-500 focus:border-amber-500"
+                }`}
                 value={tcDigits}
                 onChange={(e) => setTc(e.target.value)}
                 placeholder="11 haneli TC"
+                autoComplete="off"
               />
               <CreditCard className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
@@ -188,39 +225,59 @@ export default function HastaKayit() {
 
           {/* Telefon */}
           <div className="text-sm">
-            <label className="block text-[13px] font-medium text-gray-700 mb-1">
+            <label
+              className="block text-[13px] font-medium text-gray-700 mb-1"
+              htmlFor="phone"
+            >
               Telefon
             </label>
             <div className="relative">
               <input
+                id="phone"
                 inputMode="numeric"
-                maxLength={11}
+                maxLength={13} // 11 digit + 2 spaces
                 className={`w-full rounded-lg border bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 transition
-                ${isTelValid ? "border-gray-300 focus:ring-emerald-500" : "border-amber-300 focus:ring-amber-500"}`}
-                value={telDigits}
+                ${
+                  isTelValid
+                    ? "border-gray-300 focus:ring-emerald-500 focus:border-emerald-500"
+                    : "border-amber-300 focus:ring-amber-500 focus:border-amber-500"
+                }`}
+                value={formattedPhone}
                 onChange={(e) => setTelefon(e.target.value)}
                 placeholder="05xx xxx xx xx"
+                autoComplete="tel"
               />
               <Phone className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
             {!isTelValid && telDigits.length > 0 && (
-              <p className="text-[11px] text-amber-600 mt-2">Telefon 05 ile başlamalı ve 11 hane olmalı.</p>
+              <p className="text-[11px] text-amber-600 mt-2">
+                Telefon 05 ile başlamalı ve 11 hane olmalı.
+              </p>
             )}
           </div>
 
           {/* E-posta */}
           <div className="text-sm">
-            <label className="block text-[13px] font-medium text-gray-700 mb-1">
+            <label
+              className="block text-[13px] font-medium text-gray-700 mb-1"
+              htmlFor="email"
+            >
               E-posta
             </label>
             <div className="relative">
               <input
+                id="email"
                 type="email"
                 className={`w-full rounded-lg border bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 transition
-                ${isEmailValid ? "border-gray-300 focus:ring-emerald-500" : "border-amber-300 focus:ring-amber-500"}`}
+                ${
+                  isEmailValid
+                    ? "border-gray-300 focus:ring-emerald-500 focus:border-emerald-500"
+                    : "border-amber-300 focus:ring-amber-500 focus:border-amber-500"
+                }`}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="ornek@mail.com"
+                autoComplete="email"
               />
               <Mail className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
@@ -231,17 +288,26 @@ export default function HastaKayit() {
 
           {/* Şifre */}
           <div className="text-sm">
-            <label className="block text-[13px] font-medium text-gray-700 mb-1">
+            <label
+              className="block text-[13px] font-medium text-gray-700 mb-1"
+              htmlFor="password"
+            >
               Şifre
             </label>
             <div className="relative">
               <input
+                id="password"
                 type={showPwd ? "text" : "password"}
                 className={`w-full rounded-lg border bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 shadow-sm outline-none focus:ring-2 transition
-                ${isPassValid ? "border-gray-300 focus:ring-emerald-500" : "border-amber-300 focus:ring-amber-500"}`}
+                ${
+                  isPassValid
+                    ? "border-gray-300 focus:ring-emerald-500 focus:border-emerald-500"
+                    : "border-amber-300 focus:ring-amber-500 focus:border-amber-500"
+                }`}
                 value={sifre}
                 onChange={(e) => setSifre(e.target.value)}
                 placeholder="En az 6 karakter"
+                autoComplete="new-password"
               />
               <button
                 type="button"
@@ -264,11 +330,15 @@ export default function HastaKayit() {
 
           {/* Adres */}
           <div className="text-sm">
-            <label className="block text-[13px] font-medium text-gray-700 mb-1">
+            <label
+              className="block text-[13px] font-medium text-gray-700 mb-1"
+              htmlFor="address"
+            >
               Adres (opsiyonel)
             </label>
             <div className="relative">
               <textarea
+                id="address"
                 rows={2}
                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-10 text-sm text-gray-900 shadow-sm outline-none resize-none placeholder:text-gray-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
                 value={adres}
@@ -283,7 +353,7 @@ export default function HastaKayit() {
           <button
             type="submit"
             disabled={!formValid || loading}
-            className="w-full inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(16,185,129,0.35)] hover:bg-emerald-700 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(16,185,129,0.35)] hover:bg-emerald-700 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
           >
             {loading ? (
               <span className="inline-flex items-center gap-2">
@@ -312,8 +382,8 @@ export default function HastaKayit() {
 
         {/* KVKK */}
         <div className="text-[11px] text-gray-400 leading-snug text-center">
-          Bu form kimlik doğrulama amacıyla TC Kimlik Numarası toplar.
-          Paylaştığınız bilgiler tıbbi hizmet dışında üçüncü kişilerle paylaşılmaz.
+          Bu form kimlik doğrulama amacıyla TC Kimlik Numarası toplar. Paylaştığınız bilgiler tıbbi hizmet dışında
+          üçüncü kişilerle paylaşılmaz.
         </div>
       </section>
     </div>

@@ -8,11 +8,9 @@ import {
   CheckCircle2,
   Loader2,
   Search,
-  Filter,
-  ChevronDown,
-  ChevronUp,
-  CalendarClock,
   SortDesc,
+  CalendarClock,
+  RefreshCw,
 } from "lucide-react";
 
 export default function HastaSikayetGecmisiCard() {
@@ -22,7 +20,7 @@ export default function HastaSikayetGecmisiCard() {
   const [loading, setLoading] = useState(false);
 
   // UI state
-  const [q, setQ] = useState("");                // başlıkta arama
+  const [q, setQ] = useState(""); // başlıkta arama
   const [statusTab, setStatusTab] = useState("all"); // all | acik | incele | cozuldu
   const [sortNewFirst, setSortNewFirst] = useState(true);
   const [expanded, setExpanded] = useState(null);
@@ -35,49 +33,67 @@ export default function HastaSikayetGecmisiCard() {
     }
   }, []);
 
-  useEffect(() => {
-    async function yukle() {
-      if (!aktifHasta) {
-        setMesaj("Hasta bilgisi bulunamadı. Giriş yapın.");
-        setMesajTip("err");
-        setListe([]);
-        return;
-      }
-      try {
-        setLoading(true);
-        const data = await apiGet(`/api/sikayet/hasta/${aktifHasta.hastaId}`);
-        const arr = Array.isArray(data) ? data : (data?.data ?? []);
-        setListe(arr);
-        if (!arr.length) {
-          setMesaj("Henüz bir şikayet kaydınız yok.");
-          setMesajTip("info");
-        } else {
-          setMesaj("");
-          setMesajTip("");
-        }
-      } catch (err) {
-        setMesaj("Şikayet geçmişi yüklenemedi.");
-        setMesajTip("err");
-        setListe([]);
-      } finally {
-        setLoading(false);
-      }
+  async function yukle() {
+    if (!aktifHasta?.hastaId) {
+      setMesaj("Hasta bilgisi bulunamadı. Giriş yapın.");
+      setMesajTip("err");
+      setListe([]);
+      return;
     }
+    let canceled = false;
+    try {
+      setLoading(true);
+      setMesaj("");
+      setMesajTip("");
+
+      const data = await apiGet(`/api/sikayet/hasta/${aktifHasta.hastaId}`);
+      if (canceled) return;
+
+      const arr = Array.isArray(data) ? data : (data?.data ?? []);
+      setListe(arr);
+
+      if (!arr.length) {
+        setMesaj("Henüz bir şikayet kaydınız yok.");
+        setMesajTip("info");
+      }
+    } catch (err) {
+      const code = err?.response?.status;
+      if (code === 401 || code === 403) {
+        setMesaj("Oturum süreniz dolmuş olabilir. Lütfen tekrar giriş yapın.");
+      } else {
+        setMesaj("Şikayet geçmişi yüklenemedi.");
+      }
+      setMesajTip("err");
+      setListe([]);
+    } finally {
+      setLoading(false);
+    }
+    return () => {
+      canceled = true;
+    };
+  }
+
+  useEffect(() => {
     yukle();
-  }, [aktifHasta && aktifHasta.hastaId]);
+    // sadece hastaId değişince tekrar çek
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aktifHasta?.hastaId]);
 
   // ---- helpers ----
   function normStatus(s) {
     const t = (s || "").toLowerCase();
-    if (t.includes("acik") || t.includes("açık") || t.includes("alındı") || t.includes("kaydedildi")) return "acik";
-    if (t.includes("incele") || t.includes("değerlendir") || t.includes("degerlendir")) return "incele";
-    if (t.includes("kapandi") || t.includes("kapandı") || t.includes("çözüldü") || t.includes("cozuldu")) return "cozuldu";
+    if (t.includes("acik") || t.includes("açık") || t.includes("alındı") || t.includes("kaydedildi"))
+      return "acik";
+    if (t.includes("incele") || t.includes("değerlendir") || t.includes("degerlendir"))
+      return "incele";
+    if (t.includes("kapandi") || t.includes("kapandı") || t.includes("çözüldü") || t.includes("cozuldu"))
+      return "cozuldu";
     return "diger";
   }
 
-  function parseDate(s) {
-    if (!s) return null;
-    const d = new Date(s);
+  function parseDate(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
     return isNaN(d.getTime()) ? null : d;
   }
 
@@ -95,18 +111,15 @@ export default function HastaSikayetGecmisiCard() {
   const filtered = useMemo(() => {
     let arr = [...liste];
 
-    // durum filtresi
     if (statusTab !== "all") {
       arr = arr.filter((x) => normStatus(x.durum) === statusTab);
     }
 
-    // başlıkta arama
     const qq = q.trim().toLowerCase();
     if (qq) {
       arr = arr.filter((x) => (x.baslik || "").toLowerCase().includes(qq));
     }
 
-    // sıralama
     arr.sort((a, b) => {
       const da = parseDate(a.olusturulmaZamani) || new Date(0);
       const db = parseDate(b.olusturulmaZamani) || new Date(0);
@@ -174,6 +187,16 @@ export default function HastaSikayetGecmisiCard() {
               <SortDesc className="w-4 h-4" />
               {sortNewFirst ? "Yeni → Eski" : "Eski → Yeni"}
             </button>
+
+            <button
+              type="button"
+              onClick={yukle}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700 hover:bg-slate-50 transition"
+              title="Yenile"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Yenile
+            </button>
           </div>
         </div>
 
@@ -239,11 +262,11 @@ export default function HastaSikayetGecmisiCard() {
                         >
                           {isOpen ? (
                             <>
-                              <ChevronUp className="w-3.5 h-3.5" /> Kapat
+                              {/* ChevronUp */}▲ Kapat
                             </>
                           ) : (
                             <>
-                              <ChevronDown className="w-3.5 h-3.5" /> Detay
+                              {/* ChevronDown */}▼ Detay
                             </>
                           )}
                         </button>
@@ -254,7 +277,9 @@ export default function HastaSikayetGecmisiCard() {
                     {isOpen && (
                       <div className="mt-3 rounded-xl border border-emerald-100 bg-white/60 shadow-sm p-3 text-[13px] text-slate-800">
                         <div className="mb-2 text-[12px] font-semibold text-slate-600">Şikayet Metni</div>
-                        <div className="whitespace-pre-line break-words">{s.icerik?.trim() ? s.icerik : "Detay verilmedi."}</div>
+                        <div className="whitespace-pre-line break-words">
+                          {s.icerik?.trim() ? s.icerik : "Detay verilmedi."}
+                        </div>
 
                         {s.mudurNotu?.trim() && (
                           <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2">
@@ -283,12 +308,13 @@ export default function HastaSikayetGecmisiCard() {
 /* --- küçük bileşenler --- */
 
 function Tab({ active, onClick, label, color = "slate" }) {
-  const colors = {
-    slate: "border-slate-200 text-slate-700 hover:bg-slate-100",
-    amber: "border-amber-200 text-amber-700 hover:bg-amber-100",
-    sky: "border-sky-200 text-sky-700 hover:bg-sky-100",
-    emerald: "border-emerald-200 text-emerald-700 hover:bg-emerald-100",
-  }[color] || "border-slate-200 text-slate-700 hover:bg-slate-100";
+  const colors =
+    {
+      slate: "border-slate-200 text-slate-700 hover:bg-slate-100",
+      amber: "border-amber-200 text-amber-700 hover:bg-amber-100",
+      sky: "border-sky-200 text-sky-700 hover:bg-sky-100",
+      emerald: "border-emerald-200 text-emerald-700 hover:bg-emerald-100",
+    }[color] || "border-slate-200 text-slate-700 hover:bg-slate-100";
 
   const activeCls = active ? "bg-white border shadow-sm" : "bg-emerald-50/60";
   return (
@@ -318,16 +344,37 @@ function EmptyState() {
 
 function DurumBadge({ durum }) {
   const normalized = (durum || "").toLowerCase();
-  let bg = "bg-gray-100", text = "text-gray-700", border = "border-gray-200", label = durum || "—";
+  let bg = "bg-gray-100",
+    text = "text-gray-700",
+    border = "border-gray-200",
+    label = durum || "—";
+
   if (normalized.includes("acik") || normalized.includes("açık") || normalized.includes("alındı") || normalized.includes("kaydedildi")) {
-    bg = "bg-amber-50"; text = "text-amber-700"; border = "border-amber-200"; if (!durum) label = "Alındı";
+    bg = "bg-amber-50";
+    text = "text-amber-700";
+    border = "border-amber-200";
+    if (!durum) label = "Alındı";
   } else if (normalized.includes("incele") || normalized.includes("değerlendir") || normalized.includes("degerlendir")) {
-    bg = "bg-sky-50"; text = "text-sky-700"; border = "border-sky-200"; if (!durum) label = "İnceleniyor";
+    bg = "bg-sky-50";
+    text = "text-sky-700";
+    border = "border-sky-200";
+    if (!durum) label = "İnceleniyor";
   } else if (normalized.includes("kapandi") || normalized.includes("kapandı") || normalized.includes("çözüldü") || normalized.includes("cozuldu")) {
-    bg = "bg-emerald-50"; text = "text-emerald-700"; border = "border-emerald-200"; if (!durum) label = "Çözüldü";
+    bg = "bg-emerald-50";
+    text = "text-emerald-700";
+    border = "border-emerald-200";
+    if (!durum) label = "Çözüldü";
   }
+
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium leading-none whitespace-nowrap ${bg} ${text} ${border}`}>
+    <span
+      className={[
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium leading-none whitespace-nowrap",
+        bg,
+        text,
+        border,
+      ].join(" ")}
+    >
       {label}
     </span>
   );
@@ -337,10 +384,13 @@ function formatDateTime(iso) {
   if (!iso) return "—";
   try {
     return new Date(iso).toLocaleString("tr-TR", {
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     });
-  } catch (_) {
+  } catch {
     return String(iso);
   }
 }

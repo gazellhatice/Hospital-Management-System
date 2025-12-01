@@ -17,29 +17,45 @@ public class ZiyaretciKayitServisi {
     private final ZiyaretciKayitRepository ziyaretciKayitRepository;
     private final ResepsiyonistRepository resepsiyonistRepository;
 
+    // Adapter: param -> entity dönüştürücü
+    private final VisitorAdapter adapter = new DefaultVisitorAdapter();
+
     public ZiyaretciKayitServisi(ZiyaretciKayitRepository ziyaretciKayitRepository,
                                  ResepsiyonistRepository resepsiyonistRepository) {
         this.ziyaretciKayitRepository = ziyaretciKayitRepository;
         this.resepsiyonistRepository = resepsiyonistRepository;
     }
 
+    // ---------------------------------------------------------------------
+    // Template Method: oluşturma akışı (resepsiyonistin yeni girişi)
+    // Algortimanın iskeletini burada, alt sınıflar/inner class'lar detayları sağlar
+    // ---------------------------------------------------------------------
     @Transactional
-    public ZiyaretciKayit ziyaretciEkle(Integer resepsiyonistId,
-                                        String adSoyad,
-                                        String ziyaretSebebi,
-                                        String notlar) {
+    public final ZiyaretciKayit ziyaretciKaydiOlustur(Integer resepsiyonistId,
+                                                      String adSoyad,
+                                                      String ziyaretSebebi,
+                                                      String notlar) {
+        preValidate(resepsiyonistId, adSoyad, ziyaretSebebi);
 
-        Resepsiyonist r = resepsiyonistRepository.findById(resepsiyonistId)
+        Resepsiyonist resepsiyonist = resepsiyonistRepository.findById(resepsiyonistId)
                 .orElseThrow(() -> new RuntimeException("Resepsiyonist bulunamadı"));
 
-        ZiyaretciKayit z = new ZiyaretciKayit();
-        z.setAdSoyad(adSoyad);
-        z.setZiyaretSebebi(ziyaretSebebi);
-        z.setNotlar(notlar);
-        z.setZiyaretTarihiSaat(Timestamp.from(Instant.now()));
-        z.setResepsiyonist(r);
+        // Adapter ile entity kur
+        ZiyaretciKayit kayit = adapter.toEntity(resepsiyonist, adSoyad, ziyaretSebebi, notlar);
 
-        return ziyaretciKayitRepository.save(z);
+        prePersistHook(kayit);
+        ZiyaretciKayit saved = ziyaretciKayitRepository.save(kayit);
+        postCreate(saved);
+        return saved;
+    }
+
+    // Mevcut metod korunuyor; aynı template’i kullanır
+    @Transactional
+    public final ZiyaretciKayit ziyaretciEkle(Integer resepsiyonistId,
+                                              String adSoyad,
+                                              String ziyaretSebebi,
+                                              String notlar) {
+        return ziyaretciKaydiOlustur(resepsiyonistId, adSoyad, ziyaretSebebi, notlar);
     }
 
     // Resepsiyon kendi girdiklerini görmek ister
@@ -49,10 +65,16 @@ public class ZiyaretciKayitServisi {
         return ziyaretciKayitRepository.findByResepsiyonistOrderByZiyaretTarihiSaatDesc(r);
     }
 
-    // Müdür: tüm ziyaretçileri tarih aralığına göre görmek ister
+    // Müdür: tüm ziyaretçileri tarih aralığına göre görmek ister (Builder kullanımı)
     public List<ZiyaretciKayit> mudurZiyaretciListesi(Timestamp baslangic, Timestamp bitis) {
+        // Builder ile güvenli aralık kur (null gelirse varsayılanlar)
+        DateRange range = DateRange.builder()
+                .start(baslangic != null ? baslangic : Timestamp.from(Instant.EPOCH))
+                .end(bitis != null ? bitis : Timestamp.from(Instant.now()))
+                .build();
+
         return ziyaretciKayitRepository
-                .findByZiyaretTarihiSaatBetweenOrderByZiyaretTarihiSaatDesc(baslangic, bitis);
+                .findByZiyaretTarihiSaatBetweenOrderByZiyaretTarihiSaatDesc(range.start(), range.end());
     }
 
     @Transactional
@@ -73,22 +95,56 @@ public class ZiyaretciKayitServisi {
         ziyaretciKayitRepository.deleteById(ziyaretciId);
     }
 
-     // resepsiyonistin yeni ziyaretçi girişi açması
-    public ZiyaretciKayit ziyaretciKaydiOlustur(Integer resepsiyonistId,
-                                                String adSoyad,
-                                                String ziyaretSebebi,
-                                                String notlar) {
+    // ===================== DESEN UYGULAMASI (dosya içi) =====================
 
-        Resepsiyonist resepsiyonist = resepsiyonistRepository.findById(resepsiyonistId)
-                .orElseThrow(() -> new RuntimeException("Resepsiyonist bulunamadı"));
+    // --- Template Method hook'ları ---
+    protected void preValidate(Integer resepsiyonistId, String adSoyad, String ziyaretSebebi) {
+        if (resepsiyonistId == null) throw new IllegalArgumentException("ResepsiyonistId zorunlu");
+        if (adSoyad == null || adSoyad.isBlank()) throw new IllegalArgumentException("Ad Soyad zorunlu");
+        if (ziyaretSebebi == null || ziyaretSebebi.isBlank()) throw new IllegalArgumentException("Ziyaret sebebi zorunlu");
+    }
+    protected void prePersistHook(ZiyaretciKayit k) { /* audit/log vs. */ }
+    protected void postCreate(ZiyaretciKayit saved) { /* bildirim/log vs. */ }
 
-        ZiyaretciKayit kayit = new ZiyaretciKayit();
-        kayit.setResepsiyonist(resepsiyonist);
-        kayit.setAdSoyad(adSoyad);
-        kayit.setZiyaretSebebi(ziyaretSebebi);
-        kayit.setNotlar(notlar);
-        kayit.setZiyaretTarihiSaat(Timestamp.from(Instant.now())); // şu anki zaman
+    // --- Adapter (param -> entity) ---
+    private interface VisitorAdapter {
+        ZiyaretciKayit toEntity(Resepsiyonist r, String adSoyad, String sebep, String notlar);
+    }
+    private static class DefaultVisitorAdapter implements VisitorAdapter {
+        @Override public ZiyaretciKayit toEntity(Resepsiyonist r, String adSoyad, String sebep, String notlar) {
+            ZiyaretciKayit z = new ZiyaretciKayit();
+            z.setResepsiyonist(r);
+            z.setAdSoyad(adSoyad);
+            z.setZiyaretSebebi(sebep);
+            z.setNotlar(notlar);
+            z.setZiyaretTarihiSaat(Timestamp.from(Instant.now()));
+            return z;
+        }
+    }
 
-        return ziyaretciKayitRepository.save(kayit);
+    // --- Builder (tarih aralığı değer nesnesi) ---
+    static final class DateRange {
+        private final Timestamp start;
+        private final Timestamp end;
+        private DateRange(Timestamp start, Timestamp end) {
+            this.start = start; this.end = end;
+        }
+        public Timestamp start() { return start; }
+        public Timestamp end() { return end; }
+
+        static Builder builder() { return new Builder(); }
+        static final class Builder {
+            private Timestamp start;
+            private Timestamp end;
+            public Builder start(Timestamp s) { this.start = s; return this; }
+            public Builder end(Timestamp e) { this.end = e; return this; }
+            public DateRange build() {
+                if (start == null) start = Timestamp.from(Instant.EPOCH);
+                if (end == null) end = Timestamp.from(Instant.now());
+                if (end.before(start)) throw new IllegalArgumentException("Bitiş, başlangıçtan önce olamaz");
+                return new DateRange(start, end);
+            }
+        }
     }
 }
+        

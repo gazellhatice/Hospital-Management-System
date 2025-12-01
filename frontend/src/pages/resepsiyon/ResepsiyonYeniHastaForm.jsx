@@ -32,21 +32,25 @@ export default function ResepsiyonYeniHastaForm() {
   const [mesajTip, setMesajTip] = useState(""); // "ok" | "err" | ""
   const [loading, setLoading] = useState(false);
 
-  // login context
-  const aktifResepsiyonist = useMemo(() => {
+  // login context — hem "aktifResepsiyon" hem "aktifResepsiyonist" desteklenir
+  const aktifResepsiyon = useMemo(() => {
     try {
+      const a = JSON.parse(localStorage.getItem("aktifResepsiyon") || "null");
+      if (a) return a;
       return JSON.parse(localStorage.getItem("aktifResepsiyonist") || "null");
     } catch {
       return null;
     }
   }, []);
 
+  const resepsiyonistId = aktifResepsiyon?.resepsiyonistId ?? aktifResepsiyon?.id ?? null;
+
   // --- validations ---
   const tcOnlyDigits = useMemo(() => tc.replace(/\D/g, ""), [tc]);
   const telOnlyDigits = useMemo(() => telefon.replace(/\D/g, ""), [telefon]);
 
   const isTcValid = useMemo(() => /^[0-9]{11}$/.test(tcOnlyDigits), [tcOnlyDigits]);
-  const isTelValid = useMemo(() => /^05[0-9]{9}$/.test(telOnlyDigits), [telOnlyDigits]); // TR mobil formatı
+  const isTelValid = useMemo(() => /^05[0-9]{9}$/.test(telOnlyDigits), [telOnlyDigits]); // TR mobil format
   const isEmailValid = useMemo(
     () => (email.trim().length === 0 ? true : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)),
     [email]
@@ -55,7 +59,7 @@ export default function ResepsiyonYeniHastaForm() {
   const isNameValid = useMemo(() => adSoyad.trim().length >= 3, [adSoyad]);
 
   const formValid =
-    isNameValid && isTcValid && isTelValid && isEmailValid && isPassValid && !!aktifResepsiyonist?.resepsiyonistId;
+    isNameValid && isTcValid && isTelValid && isEmailValid && isPassValid && !!resepsiyonistId;
 
   // helpers
   function handleTcChange(v) {
@@ -80,19 +84,23 @@ export default function ResepsiyonYeniHastaForm() {
 
     try {
       setLoading(true);
-      const kaydedilen = await apiPost("/api/resepsiyon/hasta-ekle", {
-        resepsiyonistId: aktifResepsiyonist?.resepsiyonistId,
+      const payload = {
+        resepsiyonistId: Number(resepsiyonistId),
         hasta: {
           adSoyad: adSoyad.trim(),
           tcKimlikNo: tcOnlyDigits,
           telefon: telOnlyDigits,
-          email: email.trim(),
-          sifre: sifre,
+          email: email.trim().toLowerCase(),
+          sifre: sifre, // not: bir sonraki sürümde hash'lenecek
           adres: adres.trim(),
         },
-      });
+      };
 
-      const ad = kaydedilen?.adSoyad ?? kaydedilen?.data?.adSoyad ?? adSoyad;
+      const kaydedilen = await apiPost("/api/resepsiyon/hasta-ekle", payload);
+
+      const ad =
+        kaydedilen?.adSoyad ?? kaydedilen?.data?.adSoyad ?? adSoyad.trim();
+
       setMesaj("Hasta kaydedildi: " + ad);
       setMesajTip("ok");
 
@@ -104,7 +112,21 @@ export default function ResepsiyonYeniHastaForm() {
       setSifre("");
       setAdres("");
     } catch (err) {
-      setMesaj("Hata: hasta kaydedilemedi. Lütfen bilgileri kontrol edin.");
+      const serverMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        (typeof err?.response?.data === "string" ? err.response.data : null) ||
+        err?.message ||
+        null;
+
+      // olası 409 duplicate TC gibi durumlarda daha açıklayıcı:
+      const friendly =
+        serverMsg?.toLowerCase?.().includes("tc") &&
+        serverMsg?.toLowerCase?.().includes("mevcut")
+          ? "Bu TC Kimlik numarası ile kayıt zaten mevcut görünüyor."
+          : serverMsg || "Hata: hasta kaydedilemedi. Lütfen bilgileri kontrol edin.";
+
+      setMesaj(friendly);
       setMesajTip("err");
     } finally {
       setLoading(false);
@@ -133,23 +155,23 @@ export default function ResepsiyonYeniHastaForm() {
           </p>
         </div>
 
-        {/* aktif resepsiyonist bilgisi */}
+        {/* aktif resepsiyon bilgisi */}
         <div className="rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[12px] text-gray-700 shadow-sm min-w-[220px] max-w-[280px]">
           <div className="font-semibold text-gray-900 flex items-center gap-2">
             <User2 className="w-4 h-4 text-cyan-600" />
-            <span>{aktifResepsiyonist?.adSoyad || "—"}</span>
+            <span>{aktifResepsiyon?.adSoyad || "—"}</span>
           </div>
           <div className="text-[11px] text-gray-500 leading-snug mt-1">
             Resepsiyonist ID:{" "}
             <span className="text-gray-700 font-medium">
-              {aktifResepsiyonist?.resepsiyonistId || "—"}
+              {resepsiyonistId || "—"}
             </span>
           </div>
         </div>
       </header>
 
       {/* GİRİŞ UYARISI */}
-      {!aktifResepsiyonist && (
+      {!resepsiyonistId && (
         <div className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50/70 px-4 py-3 text-[13px] text-rose-700 shadow-sm">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-[2px]" />
           <div className="leading-snug">
@@ -320,6 +342,7 @@ export default function ResepsiyonYeniHastaForm() {
         {/* Kaydet */}
         <div className="md:col-span-2 flex flex-col sm:flex-row sm:justify-end">
           <button
+            type="submit"
             className="w-full sm:w-auto inline-flex items-center justify-center rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(8,145,178,0.35)] hover:bg-cyan-700 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed"
             disabled={!formValid || loading}
           >

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiPost } from "../../api";
 import {
   AlertTriangle,
@@ -7,7 +7,10 @@ import {
   MessageSquareWarning,
   Sparkles,
   Loader2,
+  Undo2,
 } from "lucide-react";
+
+const DRAFT_KEY = "hasta_sikayet_draft_v1";
 
 export default function HastaSikayetForm() {
   const [baslik, setBaslik] = useState("");
@@ -25,10 +28,28 @@ export default function HastaSikayetForm() {
     }
   }, []);
 
+  // limitler
   const BASLIK_MAX = 80;
   const ICERIK_MAX = 800;
   const BASLIK_MIN = 8;
   const ICERIK_MIN = 20;
+
+  // Taslak yükle
+  useEffect(() => {
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (draft) {
+        setBaslik(draft.baslik || "");
+        setIcerik(draft.icerik || "");
+      }
+    } catch {}
+  }, []);
+
+  // Taslak kaydet
+  useEffect(() => {
+    const payload = { baslik, icerik };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+  }, [baslik, icerik]);
 
   function applyTemplate(key) {
     if (key === "bekleme") {
@@ -36,9 +57,9 @@ export default function HastaSikayetForm() {
       setIcerik((prev) =>
         prev ||
         [
-          "Tarih/saat: __/__/____ __:__",
-          "Bölüm/Poliklinik: __________",
-          "Karşılaştığım durum: Bekleme süresi çok uzundu.",
+          "Tarih/Saat: __/__/____ __:__",
+          "Poliklinik: __________",
+          "Durum: Bekleme süresi çok uzundu.",
           "Talep: Randevu saatlerine uyum ve bilgilendirme.",
         ].join("\n")
       );
@@ -47,10 +68,10 @@ export default function HastaSikayetForm() {
       setIcerik((prev) =>
         prev ||
         [
-          "Tarih/saat: __/__/____ __:__",
+          "Tarih/Saat: __/__/____ __:__",
           "Birim: __________",
-          "Karşılaştığım durum: Üslup/iletişim uygun değildi.",
-          "Talep: Daha nazik/çözüm odaklı iletişim.",
+          "Durum: Üslup/iletişim uygun değildi.",
+          "Talep: Daha nazik ve çözüm odaklı iletişim.",
         ].join("\n")
       );
     } else if (key === "temizlik") {
@@ -58,91 +79,111 @@ export default function HastaSikayetForm() {
       setIcerik((prev) =>
         prev ||
         [
-          "Tarih/saat: __/__/____ __:__",
+          "Tarih/Saat: __/__/____ __:__",
           "Yer: __________",
-          "Karşılaştığım durum: Temizlik/hijyen yetersizdi.",
+          "Durum: Temizlik/hijyen yetersizdi.",
           "Talep: Daha sık temizlik ve kontrol.",
         ].join("\n")
       );
     }
   }
 
-  function validate() {
-    const next = {};
+  // Tek noktadan doğrulama: hem hata objesini hem de genel mesajı döndürür
+  function validateAll() {
+    const errs = {};
     if (!aktifHasta || !aktifHasta.hastaId) {
-      next.genel = "Giriş yapılmadı. Devam etmek için hasta girişi yapın.";
+      errs.genel = "Giriş yapılmadı. Devam etmek için hasta girişi yapın.";
     }
     const b = (baslik || "").trim();
     const i = (icerik || "").trim();
 
-    if (!b) next.baslik = "Başlık boş olamaz.";
-    else if (b.length < BASLIK_MIN) next.baslik = `Başlık en az ${BASLIK_MIN} karakter olmalı.`;
-    else if (b.length > BASLIK_MAX) next.baslik = `Başlık en fazla ${BASLIK_MAX} karakter.`;
+    if (!b) errs.baslik = "Başlık boş olamaz.";
+    else if (b.length < BASLIK_MIN) errs.baslik = `Başlık en az ${BASLIK_MIN} karakter olmalı.`;
+    else if (b.length > BASLIK_MAX) errs.baslik = `Başlık en fazla ${BASLIK_MAX} karakter olabilir.`;
 
-    if (!i) next.icerik = "Detay boş olamaz.";
-    else if (i.length < ICERIK_MIN) next.icerik = `Detay en az ${ICERIK_MIN} karakter olmalı.`;
-    else if (i.length > ICERIK_MAX) next.icerik = `Detay en fazla ${ICERIK_MAX} karakter.`;
+    if (!i) errs.icerik = "Detay boş olamaz.";
+    else if (i.length < ICERIK_MIN) errs.icerik = `Detay en az ${ICERIK_MIN} karakter olmalı.`;
+    else if (i.length > ICERIK_MAX) errs.icerik = `Detay en fazla ${ICERIK_MAX} karakter olabilir.`;
 
-    setFieldErr(next);
-    return Object.keys(next).length === 0;
+    return { ok: Object.keys(errs).length === 0, errs };
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (loading) return; // çift tıklama koruması
     setMesaj("");
     setMesajTip("");
 
-    if (!validate()) {
-      setMesaj(fieldErr.genel || "Lütfen form hatalarını düzeltin.");
+    const { ok, errs } = validateAll();
+    setFieldErr(errs);
+    if (!ok) {
+      setMesaj(errs.genel || "Lütfen form hatalarını düzeltin.");
       setMesajTip("err");
       return;
     }
 
     try {
       setLoading(true);
-      const s = await apiPost("/api/sikayet/olustur", {
-        hastaId: aktifHasta?.hastaId,
+      const resp = await apiPost("/api/sikayet/olustur", {
+        hastaId: aktifHasta.hastaId,
         baslik: baslik.trim(),
         icerik: icerik.trim(),
       });
 
-      setMesaj("Şikayetiniz alındı. Durum: " + (s?.durum ?? "KAYDEDİLDİ"));
+      const durum = resp?.durum || resp?.data?.durum || "KAYDEDİLDİ";
+      setMesaj(`Şikayetiniz alındı. Durum: ${durum}`);
       setMesajTip("ok");
+
+      // formu temizle + taslağı sil
       setBaslik("");
       setIcerik("");
       setFieldErr({});
+      localStorage.removeItem(DRAFT_KEY);
     } catch (err) {
-      setMesaj("Şikayet kaydedilemedi. Lütfen tekrar deneyin.");
+      const code = err?.response?.status;
+      if (code === 401 || code === 403) {
+        setMesaj("Oturum süreniz dolmuş olabilir. Lütfen tekrar giriş yapın.");
+      } else {
+        const serverMsg =
+          err?.response?.data?.message ||
+          err?.response?.data ||
+          err?.message ||
+          "Şikayet kaydedilemedi. Lütfen tekrar deneyin.";
+        setMesaj(String(serverMsg));
+      }
       setMesajTip("err");
     } finally {
       setLoading(false);
     }
   }
 
+  function resetDraft() {
+    setBaslik("");
+    setIcerik("");
+    setFieldErr({});
+    setMesaj("");
+    setMesajTip("");
+    localStorage.removeItem(DRAFT_KEY);
+  }
+
   const baslikCount = baslik.length;
   const icerikCount = icerik.length;
-
   const disabledAll = !aktifHasta || !aktifHasta.hastaId || loading;
 
   return (
     <section className="bg-white/70 backdrop-blur-md border border-emerald-100 rounded-3xl shadow-[0_8px_40px_-8px_rgba(16,185,129,0.18)] overflow-hidden transition-all duration-500 hover:shadow-[0_12px_50px_-10px_rgba(16,185,129,0.28)]">
       {/* HEADER */}
       <header className="px-6 py-5 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-emerald-50 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        {/* sol */}
         <div className="flex flex-col">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-emerald-700">
             <MessageSquareWarning className="w-4 h-4" />
             <span>Şikayet Oluştur</span>
           </div>
-          <h2 className="text-xl font-semibold text-slate-900 leading-tight">
-            Yönetim ile Paylaşın
-          </h2>
-          <p className="text-[13px] text-slate-600">
-            Buraya yazdıklarınız doğrudan hastane yönetimine iletilir.
-          </p>
+          <h2 className="text-xl font-semibold text-slate-900 leading-tight">Yönetim ile Paylaşın</h2>
+          <p className="text-[13px] text-slate-600">Buraya yazdıklarınız doğrudan hastane yönetimine iletilir.</p>
         </div>
 
-        {/* sağ: hasta bilgisi */}
+        {/* hasta bilgisi */}
         <div className="sm:text-right flex flex-col items-start sm:items-end">
           <div className="text-[13px] font-medium text-slate-800 flex items-center gap-2">
             <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">
@@ -194,7 +235,7 @@ export default function HastaSikayetForm() {
 
       {/* FORM */}
       <form className="px-6 pb-6 pt-4 flex flex-col gap-6 text-sm" onSubmit={handleSubmit}>
-        {/* Hızlı şablonlar */}
+        {/* Şablonlar */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700">
             <Sparkles className="w-4 h-4" /> Hızlı Şablonlar:
@@ -223,6 +264,18 @@ export default function HastaSikayetForm() {
           >
             Temizlik
           </button>
+
+          {/* Taslak sıfırla */}
+          <button
+            type="button"
+            onClick={resetDraft}
+            className="ml-auto inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50 transition"
+            disabled={loading}
+            title="Taslağı temizle"
+          >
+            <Undo2 className="w-3.5 h-3.5" />
+            Sıfırla
+          </button>
         </div>
 
         {/* Başlık */}
@@ -236,6 +289,7 @@ export default function HastaSikayetForm() {
             value={baslik}
             onChange={(e) => setBaslik(e.target.value.slice(0, BASLIK_MAX))}
             disabled={disabledAll}
+            autoComplete="off"
           />
           <div className="mt-1 flex items-center justify-between">
             {fieldErr.baslik ? (
@@ -244,7 +298,7 @@ export default function HastaSikayetForm() {
               <p className="text-[11px] text-slate-400 leading-snug">Kısa ve anlaşılır yazın.</p>
             )}
             <span className="text-[11px] text-slate-400">
-              {baslikCount}/{BASLIK_MAX}
+              {baslik.length}/{BASLIK_MAX}
             </span>
           </div>
         </div>
@@ -271,12 +325,12 @@ export default function HastaSikayetForm() {
               </p>
             )}
             <span className="text-[11px] text-slate-400">
-              {icerikCount}/{ICERIK_MAX}
+              {icerik.length}/{ICERIK_MAX}
             </span>
           </div>
         </div>
 
-        {/* GÖNDER BUTONU */}
+        {/* Gönder */}
         <div className="flex flex-col sm:flex-row sm:justify-end">
           <button
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(16,185,129,0.35)] hover:bg-emerald-700 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed"
@@ -288,7 +342,6 @@ export default function HastaSikayetForm() {
           </button>
         </div>
 
-        {/* privacy note */}
         <div className="text-[11px] text-slate-400 leading-snug text-center sm:text-right">
           Kişisel sağlık bilgileriniz gizli tutulur. Bu form yalnızca kalite iyileştirme amacıyla kullanılır.
         </div>

@@ -24,29 +24,30 @@ export default function ResepsiyonZiyaretciKayitForm() {
   const [mesajTip, setMesajTip] = useState(""); // "ok" | "err" | ""
   const [loading, setLoading] = useState(false);
 
-  // login context
-  const aktifResepsiyonist = useMemo(() => {
+  // login context — her iki anahtarı da destekle
+  const aktifResepsiyon = useMemo(() => {
     try {
+      const a = JSON.parse(localStorage.getItem("aktifResepsiyon") || "null");
+      if (a) return a;
       return JSON.parse(localStorage.getItem("aktifResepsiyonist") || "null");
     } catch {
       return null;
     }
   }, []);
+  const resepsiyonistId = aktifResepsiyon?.resepsiyonistId ?? aktifResepsiyon?.id ?? null;
 
   // validations
   const isNameValid = adSoyad.trim().length >= 3;
   const isReasonValid = ziyaretSebebi.trim().length >= 3;
-  const formValid =
-    isNameValid &&
-    isReasonValid &&
-    !!aktifResepsiyonist?.resepsiyonistId;
+  const formValid = isNameValid && isReasonValid && !!resepsiyonistId;
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (loading) return;
     setMesaj("");
     setMesajTip("");
 
-    if (!aktifResepsiyonist?.resepsiyonistId) {
+    if (!resepsiyonistId) {
       setMesaj("Resepsiyonist bilgisi bulunamadı. Giriş yapın.");
       setMesajTip("err");
       return;
@@ -59,14 +60,16 @@ export default function ResepsiyonZiyaretciKayitForm() {
 
     try {
       setLoading(true);
-      const res = await apiPost("/api/ziyaretci/ekle", {
-        resepsiyonistId: aktifResepsiyonist.resepsiyonistId,
+      const payload = {
+        resepsiyonistId: Number(resepsiyonistId),
         adSoyad: adSoyad.trim(),
         ziyaretSebebi: ziyaretSebebi.trim(),
         notlar: notlar.trim(),
-      });
+      };
 
-      const id = res?.ziyaretciId ?? res?.data?.ziyaretciId ?? "—";
+      const res = await apiPost("/api/ziyaretci/ekle", payload);
+      const id = res?.ziyaretciId ?? res?.data?.ziyaretciId ?? res?.id ?? res?.data?.id ?? "—";
+
       setMesaj("Ziyaretçi kaydedildi. ID: " + id);
       setMesajTip("ok");
 
@@ -75,7 +78,19 @@ export default function ResepsiyonZiyaretciKayitForm() {
       setZiyaretSebebi("");
       setNotlar("");
     } catch (err) {
-      setMesaj("Kayıt başarısız oldu. Lütfen bilgileri kontrol edin.");
+      const serverMsg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        (typeof err?.response?.data === "string" ? err.response.data : null) ||
+        err?.message ||
+        null;
+
+      const friendly =
+        serverMsg?.toLowerCase?.().includes("duplicate") ||
+        serverMsg?.toLowerCase?.().includes("mevcut")
+          ? "Benzer bir kayıt zaten mevcut görünüyor."
+          : serverMsg || "Kayıt başarısız oldu. Lütfen bilgileri kontrol edin.";
+      setMesaj(friendly);
       setMesajTip("err");
     } finally {
       setLoading(false);
@@ -110,19 +125,19 @@ export default function ResepsiyonZiyaretciKayitForm() {
         <div className="rounded-lg border border-cyan-200 bg-white px-3 py-2 text-[12px] text-gray-700 shadow-sm min-w-[200px] max-w-[260px]">
           <div className="font-semibold text-gray-900 flex items-center gap-2">
             <UserCheck className="w-4 h-4 text-cyan-600" />
-            <span>{aktifResepsiyonist?.adSoyad || "—"}</span>
+            <span>{aktifResepsiyon?.adSoyad || "—"}</span>
           </div>
           <div className="text-[11px] text-gray-500 leading-snug mt-1">
             Resepsiyonist ID:{" "}
             <span className="text-gray-700 font-medium">
-              {aktifResepsiyonist?.resepsiyonistId || "—"}
+              {resepsiyonistId || "—"}
             </span>
           </div>
         </div>
       </header>
 
       {/* giriş uyarısı */}
-      {!aktifResepsiyonist && (
+      {!resepsiyonistId && (
         <div className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50/70 px-4 py-3 text-[13px] text-rose-700 shadow-sm">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-[2px]" />
           <div className="leading-snug">
@@ -233,6 +248,7 @@ export default function ResepsiyonZiyaretciKayitForm() {
         {/* Kaydet */}
         <div className="md:col-span-2 flex flex-col sm:flex-row sm:justify-end">
           <button
+            type="submit"
             className="w-full sm:w-auto inline-flex items-center justify-center rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(8,145,178,0.35)] hover:bg-cyan-700 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed"
             disabled={!formValid || loading}
           >

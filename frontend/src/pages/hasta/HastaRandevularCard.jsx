@@ -9,7 +9,47 @@ import {
   Filter,
   Loader2,
   CalendarRange,
+  ArrowUpDown,
+  X,
+  Download,
 } from "lucide-react";
+
+/* --- küçük yardımcılar --- */
+function parseDateTime(r) {
+  // "YYYY-MM-DD" + "HH:mm"
+  const d = r?.slot?.tarih;
+  const b = r?.slot?.baslangicSaat;
+  if (!d) return null;
+  const iso = b ? `${d}T${b}:00` : `${d}T00:00:00`;
+  const dt = new Date(iso);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+function isSameDay(a, b) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+function inThisWeek(dt) {
+  const now = new Date();
+  const day = now.getDay() || 7; // pazar=0 -> 7
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(now.getDate() - (day - 1));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return dt >= monday && dt <= sunday;
+}
+function normalizeStatus(s) {
+  const t = (s || "").toLowerCase();
+  if (t.includes("onay") || t.includes("kabul")) return "onay";
+  if (t.includes("bekle")) return "bekle";
+  if (t.includes("iptal") || t.includes("cancel") || t.includes("no-show"))
+    return "iptal";
+  return "diger";
+}
 
 export default function HastaRandevularCard() {
   const [liste, setListe] = useState([]);
@@ -18,14 +58,23 @@ export default function HastaRandevularCard() {
   const [loading, setLoading] = useState(false);
 
   // ---- filtre UI state ----
-  const [q, setQ] = useState("");                // doktor adı arama
+  const [q, setQ] = useState("");                    // doktor adı arama
   const [statusTab, setStatusTab] = useState("all"); // all|onay|bekle|iptal
   const [dateFilter, setDateFilter] = useState("all"); // all|today|week
+  const [sortAsc, setSortAsc] = useState(true);
 
-  // ❗ aktifHasta'yı sadece ilk render'da oku -> referans sabit kalsın
-  const [aktifHasta] = useState(() =>
-    JSON.parse(localStorage.getItem("aktifHasta") || "null")
-  );
+  // sayfalama
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
+
+  // aktifHasta'yı sadece ilk render'da oku -> referans sabit kalsın
+  const [aktifHasta] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("aktifHasta") || "null");
+    } catch {
+      return null;
+    }
+  });
 
   // ---- veri yükleme ----
   useEffect(() => {
@@ -51,63 +100,21 @@ export default function HastaRandevularCard() {
         setListe(list);
         setMesaj("");
         setMesajTip("");
-      } catch (err) {
+      } catch {
         if (!isMounted) return;
         setMesaj("Randevular yüklenemedi.");
         setMesajTip("err");
-        setListe([]); // spinner yerine boş durum
+        setListe([]);
       } finally {
         if (isMounted) setLoading(false);
       }
     }
 
     yukle();
-    return () => {
-      isMounted = false;
-    };
-    // ✅ sadece hastaId değişirse tekrar yükle
+    return () => { isMounted = false; };
   }, [aktifHasta?.hastaId]);
 
-  // ---- yardımcılar ----
-  function normalizeStatus(s) {
-    const t = (s || "").toLowerCase();
-    if (t.includes("onay") || t.includes("kabul")) return "onay";
-    if (t.includes("bekle")) return "bekle";
-    if (t.includes("iptal") || t.includes("cancel") || t.includes("no-show"))
-      return "iptal";
-    return "diger";
-  }
-
-  function parseDateTime(r) {
-    // "YYYY-MM-DD" + "HH:mm"
-    const d = r?.slot?.tarih;
-    const b = r?.slot?.baslangicSaat;
-    if (!d) return null;
-    const iso = b ? `${d}T${b}:00` : `${d}T00:00:00`;
-    const dt = new Date(iso);
-    return isNaN(dt.getTime()) ? null : dt;
-  }
-
-  function isSameDay(a, b) {
-    return (
-      a.getFullYear() === b.getFullYear() &&
-      a.getMonth() === b.getMonth() &&
-      a.getDate() === b.getDate()
-    );
-  }
-
-  function inThisWeek(dt) {
-    const now = new Date();
-    const day = now.getDay() || 7; // pazar=0 -> 7
-    const monday = new Date(now);
-    monday.setHours(0, 0, 0, 0);
-    monday.setDate(now.getDate() - (day - 1));
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
-    sunday.setHours(23, 59, 59, 999);
-    return dt >= monday && dt <= sunday;
-  }
-
+  // ---- filtrelenmiş + sıralanmış veri ----
   const filtered = useMemo(() => {
     let arr = [...liste];
 
@@ -133,18 +140,20 @@ export default function HastaRandevularCard() {
       );
     }
 
+    // tarih + saat’e göre sıralama
     arr.sort((a, b) => {
       const da = parseDateTime(a);
       const db = parseDateTime(b);
       if (!da && !db) return 0;
-      if (!da) return 1;
-      if (!db) return -1;
-      return da - db;
+      if (!da) return sortAsc ? 1 : -1;
+      if (!db) return sortAsc ? -1 : 1;
+      return sortAsc ? da - db : db - da;
     });
 
     return arr;
-  }, [liste, statusTab, dateFilter, q]);
+  }, [liste, statusTab, dateFilter, q, sortAsc]);
 
+  // sayaçlar
   const counts = useMemo(() => {
     const c = { all: liste.length, onay: 0, bekle: 0, iptal: 0 };
     liste.forEach((r) => {
@@ -155,6 +164,45 @@ export default function HastaRandevularCard() {
     });
     return c;
   }, [liste]);
+
+  // sayfalama hesapları
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageSafe = Math.min(Math.max(1, page), totalPages);
+  const items = useMemo(() => {
+    const start = (pageSafe - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, pageSafe]);
+
+  // arama sıfırla
+  function clearSearch() {
+    setQ("");
+    setPage(1);
+  }
+
+  // CSV dışa aktar
+  function downloadCSV() {
+    const headers = ["randevuId","tarih","baslangicSaat","bitisSaat","doktor","brans","durum","notlar"];
+    const rows = filtered.map((r) => [
+      r?.randevuId ?? "",
+      r?.slot?.tarih ?? "",
+      r?.slot?.baslangicSaat ?? "",
+      r?.slot?.bitisSaat ?? "",
+      r?.doktor?.adSoyad ?? "",
+      r?.doktor?.brans ?? "",
+      r?.randevuDurumu ?? "",
+      (r?.notlar ?? "").replace(/\s+/g, " ").trim(),
+    ]);
+    const csv =
+      headers.join(";") + "\n" +
+      rows.map(row => row.map(c => `"${String(c).replace(/"/g,'""')}"`).join(";")).join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "randevularim.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <section className="bg-white/70 backdrop-blur-md border border-emerald-100 rounded-3xl shadow-[0_8px_40px_-8px_rgba(16,185,129,0.18)] overflow-hidden transition-all duration-500 hover:shadow-[0_12px_50px_-10px_rgba(16,185,129,0.28)]">
@@ -197,46 +245,56 @@ export default function HastaRandevularCard() {
           <div className="flex flex-wrap items-center gap-2">
             <TabButton
               active={statusTab === "all"}
-              onClick={() => setStatusTab("all")}
+              onClick={() => { setStatusTab("all"); setPage(1); }}
               label={`Tümü (${counts.all})`}
             />
             <TabButton
               active={statusTab === "onay"}
-              onClick={() => setStatusTab("onay")}
+              onClick={() => { setStatusTab("onay"); setPage(1); }}
               color="emerald"
               label={`Onaylı (${counts.onay})`}
             />
             <TabButton
               active={statusTab === "bekle"}
-              onClick={() => setStatusTab("bekle")}
+              onClick={() => { setStatusTab("bekle"); setPage(1); }}
               color="amber"
               label={`Beklemede (${counts.bekle})`}
             />
             <TabButton
               active={statusTab === "iptal"}
-              onClick={() => setStatusTab("iptal")}
+              onClick={() => { setStatusTab("iptal"); setPage(1); }}
               color="rose"
               label={`İptal (${counts.iptal})`}
             />
           </div>
 
-          {/* arama + tarih hızlı filtre */}
+          {/* arama + tarih hızlı filtre + sıralama + dışa aktar */}
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative">
               <input
-                className="w-64 rounded-lg border border-emerald-200 bg-white pl-9 pr-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+                className="w-64 rounded-lg border border-emerald-200 bg-white pl-9 pr-9 py-2 text-sm text-slate-900 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
                 placeholder="Doktor adına göre ara…"
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => { setQ(e.target.value); setPage(1); }}
               />
               <Search className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2" />
+              {q ? (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-emerald-50"
+                  title="Temizle"
+                >
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
+              ) : null}
             </div>
 
             <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2 py-1.5 text-[12px] text-emerald-800">
               <Filter className="w-4 h-4" />
               <button
                 type="button"
-                onClick={() => setDateFilter("all")}
+                onClick={() => { setDateFilter("all"); setPage(1); }}
                 className={`rounded-md px-2 py-1 transition ${
                   dateFilter === "all"
                     ? "bg-white border border-emerald-200 shadow-sm"
@@ -247,7 +305,7 @@ export default function HastaRandevularCard() {
               </button>
               <button
                 type="button"
-                onClick={() => setDateFilter("today")}
+                onClick={() => { setDateFilter("today"); setPage(1); }}
                 className={`rounded-md px-2 py-1 transition ${
                   dateFilter === "today"
                     ? "bg-white border border-emerald-200 shadow-sm"
@@ -259,7 +317,7 @@ export default function HastaRandevularCard() {
               </button>
               <button
                 type="button"
-                onClick={() => setDateFilter("week")}
+                onClick={() => { setDateFilter("week"); setPage(1); }}
                 className={`rounded-md px-2 py-1 transition ${
                   dateFilter === "week"
                     ? "bg-white border border-emerald-200 shadow-sm"
@@ -271,6 +329,26 @@ export default function HastaRandevularCard() {
               </button>
               <CalendarRange className="w-4 h-4 opacity-70" />
             </div>
+
+            <button
+              type="button"
+              onClick={() => { setSortAsc(s => !s); setPage(1); }}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm hover:bg-emerald-50"
+              title="Tarih/saat’e göre sırala"
+            >
+              <ArrowUpDown className="w-4 h-4" />
+              {sortAsc ? "Tarih Artan" : "Tarih Azalan"}
+            </button>
+
+            <button
+              type="button"
+              onClick={downloadCSV}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm hover:bg-emerald-50"
+              title="CSV olarak indir"
+            >
+              <Download className="w-4 h-4" />
+              Dışa aktar
+            </button>
           </div>
         </div>
 
@@ -305,67 +383,92 @@ export default function HastaRandevularCard() {
           ) : filtered.length === 0 ? (
             <EmptyState />
           ) : (
-            <ul className="divide-y divide-emerald-100/70">
-              {filtered.map((r, i) => (
-                <li
-                  key={r.randevuId}
-                  className="relative px-5 py-4 hover:bg-emerald-50/70 transition"
-                >
-                  {/* timeline çizgisi */}
-                  {i !== filtered.length - 1 && (
-                    <span className="absolute left-[22px] top-[56px] bottom-0 w-[2px] bg-emerald-100" />
-                  )}
+            <>
+              <ul className="divide-y divide-emerald-100/70">
+                {items.map((r, i) => (
+                  <li
+                    key={r.randevuId}
+                    className="relative px-5 py-4 hover:bg-emerald-50/70 transition"
+                  >
+                    {/* timeline çizgisi */}
+                    {i !== items.length - 1 && (
+                      <span className="absolute left-[22px] top-[56px] bottom-0 w-[2px] bg-emerald-100" />
+                    )}
 
-                  <div className="flex items-start gap-4">
-                    {/* avatar */}
-                    <div className="shrink-0">
-                      <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm">
-                        <User2 className="w-4 h-4" />
+                    <div className="flex items-start gap-4">
+                      {/* avatar */}
+                      <div className="shrink-0">
+                        <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm">
+                          <User2 className="w-4 h-4" />
+                        </div>
                       </div>
-                    </div>
 
-                    {/* içerik */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900">
-                            {r.doktor?.adSoyad || "Doktor bilgisi yok"}
-                          </h3>
-                          <p className="text-[12px] text-slate-500">
-                            {r.doktor?.brans || "Branş bilgisi yok"}
-                          </p>
+                      {/* içerik */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-sm font-semibold text-slate-900">
+                              {r.doktor?.adSoyad || "Doktor bilgisi yok"}
+                            </h3>
+                            <p className="text-[12px] text-slate-500">
+                              {r.doktor?.brans || "Branş bilgisi yok"}
+                            </p>
+                          </div>
+
+                          <StatusBadge durum={r.randevuDurumu} />
                         </div>
 
-                        <StatusBadge durum={r.randevuDurumu} />
-                      </div>
+                        {/* notlar */}
+                        {r?.notlar?.trim() ? (
+                          <p className="mt-2 text-[13px] text-slate-600 italic line-clamp-2">
+                            {r.notlar}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-[13px] text-slate-400">
+                            Not eklenmemiş.
+                          </p>
+                        )}
 
-                      {/* notlar */}
-                      {r?.notlar?.trim() ? (
-                        <p className="mt-2 text-[13px] text-slate-600 italic line-clamp-2">
-                          {r.notlar}
-                        </p>
-                      ) : (
-                        <p className="mt-2 text-[13px] text-slate-400">
-                          Not eklenmemiş.
-                        </p>
-                      )}
-
-                      {/* saat & id */}
-                      <div className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-800">
-                        <Clock className="w-4 h-4 text-emerald-600" />
-                        <span className="tabular-nums">
-                          {r.slot?.tarih || "—"} {r.slot?.baslangicSaat || "--:--"} -{" "}
-                          {r.slot?.bitisSaat || "--:--"}
-                        </span>
-                        <span className="ml-auto text-[11px] text-slate-400">
-                          Randevu #{r.randevuId}
-                        </span>
+                        {/* saat & id */}
+                        <div className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-800">
+                          <Clock className="w-4 h-4 text-emerald-600" />
+                          <span className="tabular-nums">
+                            {r.slot?.tarih || "—"} {r.slot?.baslangicSaat || "--:--"} -{" "}
+                            {r.slot?.bitisSaat || "--:--"}
+                          </span>
+                          <span className="ml-auto text-[11px] text-slate-400">
+                            Randevu #{r.randevuId}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+
+              {/* sayfalama */}
+              <div className="px-5 py-3 flex items-center justify-between text-sm">
+                <div className="text-slate-600">
+                  Toplam <b>{total}</b> kayıt — Sayfa {pageSafe}/{totalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-3 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={pageSafe <= 1}
+                  >
+                    Önceki
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={pageSafe >= totalPages}
+                  >
+                    Sonraki
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

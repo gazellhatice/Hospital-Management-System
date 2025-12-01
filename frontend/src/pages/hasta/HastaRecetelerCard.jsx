@@ -3,22 +3,57 @@ import { apiGet } from "../../api";
 import {
   Pill,
   User2,
-  CalendarClock,
   FileText,
   AlertTriangle,
   Loader2,
   Search,
   ChevronDown,
   ChevronUp,
+  ArrowUpDown,
+  Download,
+  CalendarClock,
+  X,
 } from "lucide-react";
+
+/* --- yardımcılar --- */
+function fmtDateTime(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("tr-TR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return String(iso);
+  }
+}
+// recete tarihini farklı alan adlarını destekleyecek şekilde oku
+function getReceteDate(rec) {
+  // backend farklı alanlar dönebilir: olusturulmaZamani | createdAt | tarih
+  return rec?.olusturulmaZamani || rec?.createdAt || rec?.tarih || null;
+}
+// doktor adını güvenli al
+function getDoktorAd(rec) {
+  return rec?.doktorAdSoyad || rec?.doktor?.adSoyad || "";
+}
 
 export default function HastaRecetelerCard() {
   const [liste, setListe] = useState([]);
   const [mesaj, setMesaj] = useState("");
-  const [mesajTip, setMesajTip] = useState("");
+  const [mesajTip, setMesajTip] = useState(""); // "err" | "info" | ""
   const [loading, setLoading] = useState(false);
+
+  // filtreler & görünüm
   const [q, setQ] = useState("");
+  const [sortAsc, setSortAsc] = useState(false); // yeni → eski varsayılan
   const [expanded, setExpanded] = useState(null);
+
+  // sayfalama
+  const [page, setPage] = useState(1);
+  const pageSize = 8;
 
   const aktifHasta = useMemo(() => {
     try {
@@ -28,8 +63,9 @@ export default function HastaRecetelerCard() {
     }
   }, []);
 
+  // veri yükle
   useEffect(() => {
-    const hastaId = aktifHasta && aktifHasta.hastaId;
+    const hastaId = aktifHasta?.hastaId;
     if (!hastaId) {
       setMesaj("Hasta bilgisi bulunamadı. Lütfen giriş yapın.");
       setMesajTip("err");
@@ -43,15 +79,10 @@ export default function HastaRecetelerCard() {
         setLoading(true);
         const data = await apiGet(`/api/recete/hasta/${hastaId}`);
         if (iptal) return;
-        const arr = Array.isArray(data) ? data : [];
+        const arr = Array.isArray(data) ? data : (data?.data ?? []);
         setListe(arr);
-        if (arr.length === 0) {
-          setMesaj("Kayıtlı reçeteniz bulunmuyor.");
-          setMesajTip("info");
-        } else {
-          setMesaj("");
-          setMesajTip("");
-        }
+        setMesaj(arr.length === 0 ? "Kayıtlı reçeteniz bulunmuyor." : "");
+        setMesajTip(arr.length === 0 ? "info" : "");
       } catch (e) {
         if (iptal) return;
         console.error("Recete fetch error:", e);
@@ -62,35 +93,74 @@ export default function HastaRecetelerCard() {
         setLoading(false);
       }
     })();
-    return () => {
-      iptal = true;
-    };
-  }, [aktifHasta && aktifHasta.hastaId]);
+    return () => { iptal = true; };
+  }, [aktifHasta?.hastaId]);
 
-  const fTarih = (iso) => {
-    if (!iso) return "—";
-    try {
-      return new Date(iso).toLocaleString("tr-TR", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return String(iso);
-    }
-  };
-
+  // filtre + sıralama
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
-    if (!qq) return liste;
-    return liste.filter(
-      (r) =>
-        (r.doktorAdSoyad || "").toLowerCase().includes(qq) ||
-        (r.ilacListesi || "").toLowerCase().includes(qq)
-    );
-  }, [q, liste]);
+    let arr = [...liste];
+
+    if (qq) {
+      arr = arr.filter((r) =>
+        getDoktorAd(r).toLowerCase().includes(qq) ||
+        String(r?.ilacListesi || "").toLowerCase().includes(qq)
+      );
+    }
+
+    arr.sort((a, b) => {
+      const da = getReceteDate(a);
+      const db = getReceteDate(b);
+      const ta = da ? new Date(da).getTime() : 0;
+      const tb = db ? new Date(db).getTime() : 0;
+      return sortAsc ? ta - tb : tb - ta;
+    });
+
+    return arr;
+  }, [liste, q, sortAsc]);
+
+  // sayfalama hesapları
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageSafe = Math.min(Math.max(1, page), totalPages);
+  const items = useMemo(() => {
+    const start = (pageSafe - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, pageSafe]);
+
+  // aramayı temizle
+  function clearSearch() {
+    setQ("");
+    setPage(1);
+  }
+
+  // CSV dışa aktar
+  function downloadCSV() {
+    const headers = ["receteId", "tarih", "doktor", "ilacListesi", "aciklama"];
+    const rows = filtered.map((r) => [
+      r?.receteId ?? "",
+      fmtDateTime(getReceteDate(r)),
+      getDoktorAd(r),
+      String(r?.ilacListesi || "").replace(/\s+/g, " ").trim(),
+      String(r?.aciklama || "").replace(/\s+/g, " ").trim(),
+    ]);
+    const csv =
+      headers.join(";") +
+      "\n" +
+      rows
+        .map((row) =>
+          row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")
+        )
+        .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "recetelerim.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <section className="bg-white/70 backdrop-blur-md border border-emerald-100 rounded-3xl shadow-[0_8px_40px_-8px_rgba(16,185,129,0.2)] overflow-hidden transition-all duration-500 hover:shadow-[0_12px_50px_-10px_rgba(16,185,129,0.28)]">
@@ -119,24 +189,54 @@ export default function HastaRecetelerCard() {
             <span>{aktifHasta?.adSoyad || "—"}</span>
           </div>
           <div className="text-[12px] text-slate-400 leading-none">
-            {aktifHasta?.tcKimlikNo
-              ? `TC ${aktifHasta.tcKimlikNo}`
-              : "Kimlik doğrulanmadı"}
+            {aktifHasta?.tcKimlikNo ? `TC ${aktifHasta.tcKimlikNo}` : "Kimlik doğrulanmadı"}
           </div>
         </div>
       </header>
 
-      {/* Search */}
-      <div className="px-6 pt-4">
-        <div className="relative w-full sm:w-80">
+      {/* Ara / eylemler */}
+      <div className="px-6 pt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div className="relative w-full md:w-80">
           <input
             type="text"
             placeholder="Doktor veya ilaç adına göre ara…"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="w-full rounded-lg border border-emerald-200 bg-white pl-9 pr-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+            onChange={(e) => { setQ(e.target.value); setPage(1); }}
+            className="w-full rounded-lg border border-emerald-200 bg-white pl-9 pr-8 py-2 text-sm text-slate-900 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
           />
           <Search className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2" />
+          {q ? (
+            <button
+              type="button"
+              aria-label="Temizle"
+              onClick={clearSearch}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-emerald-50"
+            >
+              <X className="w-4 h-4 text-slate-400" />
+            </button>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setSortAsc((s) => !s); setPage(1); }}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm hover:bg-emerald-50"
+            title="Tarih’e göre sırala"
+          >
+            <ArrowUpDown className="w-4 h-4" />
+            {sortAsc ? "Tarih Artan" : "Tarih Azalan"}
+          </button>
+
+          <button
+            type="button"
+            onClick={downloadCSV}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm hover:bg-emerald-50"
+            title="CSV olarak indir"
+          >
+            <Download className="w-4 h-4" />
+            Dışa aktar
+          </button>
         </div>
       </div>
 
@@ -170,76 +270,95 @@ export default function HastaRecetelerCard() {
           ) : filtered.length === 0 ? (
             <EmptyState />
           ) : (
-            <ul className="divide-y divide-emerald-100/70">
-              {filtered.map((rec) => {
-                const isOpen = expanded === rec.receteId;
-                return (
-                  <li
-                    key={rec.receteId}
-                    className="relative px-5 py-4 hover:bg-emerald-50/70 transition"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
+            <>
+              <ul className="divide-y divide-emerald-100/70">
+                {items.map((rec) => {
+                  const isOpen = expanded === rec.receteId;
+                  return (
+                    <li
+                      key={rec.receteId}
+                      className="relative px-5 py-4 hover:bg-emerald-50/70 transition"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-2 min-w-0">
                           <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm">
                             <User2 className="w-4 h-4" />
                           </div>
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">
-                              {rec.doktorAdSoyad || "Doktor bilgisi yok"}
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 truncate">
+                              {getDoktorAd(rec) || "Doktor bilgisi yok"}
                             </div>
                             <div className="text-[12px] text-slate-500">
-                              {fTarih(rec.olusturulmaZamani)}
+                              {fmtDateTime(getReceteDate(rec))}
                             </div>
                           </div>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setExpanded(isOpen ? null : rec.receteId)}
+                          className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-1.5 text-[12px] text-emerald-700 hover:bg-emerald-100 transition flex items-center gap-1 shrink-0"
+                        >
+                          {isOpen ? (
+                            <>
+                              <ChevronUp className="w-3.5 h-3.5" /> Kapat
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="w-3.5 h-3.5" /> Detay
+                            </>
+                          )}
+                        </button>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpanded(isOpen ? null : rec.receteId)
-                        }
-                        className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-1.5 text-[12px] text-emerald-700 hover:bg-emerald-100 transition flex items-center gap-1"
-                      >
-                        {isOpen ? (
-                          <>
-                            <ChevronUp className="w-3.5 h-3.5" /> Kapat
-                          </>
-                        ) : (
-                          <>
-                            <ChevronDown className="w-3.5 h-3.5" /> Detay
-                          </>
-                        )}
-                      </button>
-                    </div>
+                      {/* collapse alanı */}
+                      {isOpen && (
+                        <div className="mt-3 ml-11 rounded-xl border border-emerald-100 bg-white/60 shadow-sm p-3 text-[13px] text-slate-800">
+                          <div className="mb-2 text-[12px] font-semibold text-emerald-700 flex items-center gap-1">
+                            <Pill className="w-3.5 h-3.5" />
+                            İlaç Listesi
+                          </div>
+                          <div className="whitespace-pre-line break-words leading-snug mb-3">
+                            {rec.ilacListesi || "—"}
+                          </div>
 
-                    {/* collapse alanı */}
-                    {isOpen && (
-                      <div className="mt-3 ml-11 rounded-xl border border-emerald-100 bg-white/60 shadow-sm p-3 text-[13px] text-slate-800">
-                        <div className="mb-2 text-[12px] font-semibold text-emerald-700 flex items-center gap-1">
-                          <Pill className="w-3.5 h-3.5" />
-                          İlaç Listesi
-                        </div>
-                        <div className="whitespace-pre-line break-words leading-snug mb-3">
-                          {rec.ilacListesi || "—"}
-                        </div>
+                          <div className="text-[12px] text-slate-600 italic">
+                            {rec.aciklama?.trim() ? rec.aciklama : "Açıklama yok"}
+                          </div>
 
-                        <div className="text-[12px] text-slate-600 italic">
-                          {rec.aciklama?.trim()
-                            ? rec.aciklama
-                            : "Açıklama yok"}
+                          <div className="mt-2 text-[11px] text-slate-400">
+                            Reçete #{rec.receteId}
+                          </div>
                         </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
 
-                        <div className="mt-2 text-[11px] text-slate-400">
-                          Reçete #{rec.receteId}
-                        </div>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+              {/* sayfalama */}
+              <div className="px-5 py-3 flex items-center justify-between text-sm">
+                <div className="text-slate-600">
+                  Toplam <b>{total}</b> kayıt — Sayfa {pageSafe}/{totalPages}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-3 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={pageSafe <= 1}
+                  >
+                    Önceki
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-50 disabled:opacity-50"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={pageSafe >= totalPages}
+                  >
+                    Sonraki
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

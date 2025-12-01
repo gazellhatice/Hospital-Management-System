@@ -20,17 +20,22 @@ export default function DoktorReceteYazForm() {
   const [loading, setLoading] = useState(false);
   const [fieldErr, setFieldErr] = useState({});
 
-  let aktifDoktor = null;
-  try {
-    aktifDoktor = JSON.parse(localStorage.getItem("aktifDoktor") || "null");
-  } catch (_) {}
+  const aktifDoktor = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("aktifDoktor") || "null");
+    } catch {
+      return null;
+    }
+  }, []);
 
   // — Yardımcılar —
   const ilacCount = useMemo(() => {
     const clean = ilacListesi.trim();
     if (!clean) return 0;
-    // satır/virgül/; ile ayrılmış liste sayımı (esnek)
-    return clean.split(/\n|,|;/).map(s => s.trim()).filter(Boolean).length;
+    return clean
+      .split(/\n|,|;/)
+      .map((s) => s.trim())
+      .filter(Boolean).length;
   }, [ilacListesi]);
 
   function applyTemplate(t) {
@@ -44,10 +49,7 @@ export default function DoktorReceteYazForm() {
       );
     } else if (t === "agri") {
       setIlacListesi(
-        [
-          "Ibuprofen 400 mg — günde 2x1",
-          "Kas gevşetici — gece 1",
-        ].join("\n")
+        ["Ibuprofen 400 mg — günde 2x1", "Kas gevşetici — gece 1"].join("\n")
       );
     } else if (t === "ab") {
       setIlacListesi(
@@ -59,6 +61,7 @@ export default function DoktorReceteYazForm() {
     }
   }
 
+  // validate -> hata nesnesi döndürür
   function validate() {
     const next = {};
     const hId = Number(hastaId);
@@ -72,27 +75,27 @@ export default function DoktorReceteYazForm() {
     if (!ilacListesi.trim()) {
       next.ilacListesi = "İlaç listesi boş olamaz.";
     }
-    setFieldErr(next);
-    return Object.keys(next).length === 0;
+    return next;
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setMesaj("");
     setMesajTip("");
-    if (!validate()) {
-      setMesaj(fieldErr.genel || "Lütfen form hatalarını düzeltin.");
+
+    const errs = validate();
+    setFieldErr(errs);
+    if (Object.keys(errs).length > 0) {
+      setMesaj(errs.genel || "Lütfen form hatalarını düzeltin.");
       setMesajTip("err");
       return;
     }
-
-    const hId = Number(hastaId);
 
     try {
       setLoading(true);
       const rec = await apiPost("/api/recete/yaz", {
         doktorId: Number(aktifDoktor.doktorId),
-        hastaId: hId,
+        hastaId: Number(hastaId),
         ilacListesi: ilacListesi.trim(),
         aciklama: aciklama.trim(),
       });
@@ -106,17 +109,20 @@ export default function DoktorReceteYazForm() {
       setAciklama("");
       setFieldErr({});
     } catch (err) {
-      console.error("recete/yaz error:", err);
+      // olası backend mesajını çıkar
       const serverMsg =
+        err?.response?.data?.message ||
         err?.response?.data ||
         err?.message ||
         "Reçete oluşturulamadı. Lütfen bilgileri kontrol edin.";
-      setMesaj(serverMsg);
+      setMesaj(String(serverMsg));
       setMesajTip("err");
     } finally {
       setLoading(false);
     }
   }
+
+  const disableAll = !aktifDoktor || !aktifDoktor.doktorId || loading;
 
   return (
     <section className="bg-white/70 backdrop-blur-md border border-indigo-100 rounded-3xl shadow-[0_8px_40px_-8px_rgba(79,70,229,0.2)] overflow-hidden transition-all duration-500 hover:shadow-[0_12px_50px_-10px_rgba(79,70,229,0.3)]">
@@ -145,7 +151,7 @@ export default function DoktorReceteYazForm() {
             <span>{aktifDoktor?.adSoyad || "—"}</span>
           </div>
           <div className="text-[12px] text-slate-400 leading-none">
-            {aktifDoktor?.brans || "Branş bilgisi yok"}
+            {aktifDoktor?.brans || aktifDoktor?.uzmanlik || "Branş bilgisi yok"}
           </div>
         </div>
       </header>
@@ -174,7 +180,10 @@ export default function DoktorReceteYazForm() {
       )}
 
       {/* FORM */}
-      <form onSubmit={handleSubmit} className="px-6 pb-6 pt-4 grid gap-6 text-sm md:grid-cols-12">
+      <form
+        onSubmit={handleSubmit}
+        className="px-6 pb-6 pt-4 grid gap-6 text-sm md:grid-cols-12"
+      >
         {/* Hasta ID */}
         <div className="md:col-span-3">
           <label className="block text-[13px] font-medium text-slate-700 mb-1">
@@ -183,12 +192,17 @@ export default function DoktorReceteYazForm() {
           <div className="relative">
             <input
               className={`w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
-                fieldErr.hastaId ? "border-rose-300 ring-rose-200" : "border-slate-300"
+                fieldErr.hastaId
+                  ? "border-rose-300 ring-rose-200"
+                  : "border-slate-300"
               }`}
               placeholder="örn: 1"
               value={hastaId}
-              onChange={(e) => setHastaId(e.target.value)}
+              onChange={(e) =>
+                setHastaId(e.target.value.replace(/\D/g, "").slice(0, 9))
+              }
               inputMode="numeric"
+              disabled={disableAll}
             />
             <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 select-none">
               ID
@@ -245,14 +259,19 @@ export default function DoktorReceteYazForm() {
           <textarea
             rows={4}
             className={`w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none resize-y min-h-[96px] transition focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 ${
-              fieldErr.ilacListesi ? "border-rose-300 ring-rose-200" : "border-slate-300"
+              fieldErr.ilacListesi
+                ? "border-rose-300 ring-rose-200"
+                : "border-slate-300"
             }`}
-            placeholder={"Örnek:\nParacetamol 500 mg — günde 3x1\n..." }
+            placeholder={"Örnek:\nParacetamol 500 mg — günde 3x1\n..."}
             value={ilacListesi}
             onChange={(e) => setIlacListesi(e.target.value)}
+            disabled={disableAll}
           />
           {fieldErr.ilacListesi && (
-            <p className="mt-1 text-[12px] text-rose-600">{fieldErr.ilacListesi}</p>
+            <p className="mt-1 text-[12px] text-rose-600">
+              {fieldErr.ilacListesi}
+            </p>
           )}
 
           {/* Mini özet satırı */}
@@ -262,7 +281,9 @@ export default function DoktorReceteYazForm() {
               <b>Kalem sayısı:</b> {ilacCount}
             </span>
             <span className="text-slate-400">•</span>
-            <span className="text-slate-500">Satırları virgül/; ile de ayırabilirsiniz.</span>
+            <span className="text-slate-500">
+              Satırları virgül/; ile de ayırabilirsiniz.
+            </span>
           </div>
         </div>
 
@@ -278,6 +299,7 @@ export default function DoktorReceteYazForm() {
             value={aciklama}
             onChange={(e) => setAciklama(e.target.value)}
             maxLength={240}
+            disabled={disableAll}
           />
           <div className="mt-1 text-[11px] text-slate-400">
             {aciklama.length}/240
@@ -308,7 +330,7 @@ export default function DoktorReceteYazForm() {
           <button
             className="w-full sm:w-auto inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)] hover:bg-indigo-700 active:scale-[0.99] transition disabled:opacity-60 disabled:cursor-not-allowed"
             type="submit"
-            disabled={loading}
+            disabled={disableAll}
           >
             {loading ? "Kaydediliyor..." : "Reçeteyi Kaydet"}
           </button>
